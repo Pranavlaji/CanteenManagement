@@ -1,0 +1,22 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function role() {
+      return request.auth != null && request.auth.token.role is string
+        ? request.auth.token.role
+        : "student";
+    }
+
+    function admin() {
+      return role() == "admin";
+    }
+
+    match /menu/{allPaths=**} {
+      allow read: if true;
+      allow write: if admin()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType in ["image/jpeg", "image/png"];
+    }
+  }
+}
