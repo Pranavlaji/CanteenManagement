@@ -2,7 +2,7 @@
 
 import { money } from "@/lib/format";
 import { CartItem } from "@/lib/types";
-import { ChevronRight, Minus, Phone, Plus, ReceiptText, X } from "lucide-react";
+import { ChevronRight, Minus, Mail, Plus, ReceiptText, X } from "lucide-react";
 
 export function CartReview({
   cart,
@@ -70,7 +70,7 @@ export function CartReview({
         <section className="cart-summary-panel">
           <button className="summary-row" type="button">
             <span>
-              <Phone size={22} />
+              <Mail size={22} />
               <strong>{phone}</strong>
             </span>
             <ChevronRight size={28} />

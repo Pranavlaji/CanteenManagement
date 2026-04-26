@@ -37,11 +37,9 @@ export default function TokensPage() {
 
   if (!authReady) {
     return (
-      <main className="workspace solo">
-        <div className="panel">
-          <p className="muted">Loading your account...</p>
-        </div>
-      </main>
+      <div className="loading-screen">
+        <div className="spinner" />
+      </div>
     );
   }
 

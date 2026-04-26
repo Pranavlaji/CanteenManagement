@@ -38,6 +38,7 @@ export type Order = {
 export type UserProfile = {
   uid: string;
   name: string;
+  email: string;
   phone: string;
   role: Role;
 };

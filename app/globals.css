@@ -366,6 +366,38 @@ input {
   padding: 0 12px;
 }
 
+.google-sign-in-button {
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  font-size: 16px;
+  font-weight: 500;
+  gap: 12px;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 16px;
+  transition: background 0.2s, box-shadow 0.2s;
+  width: 100%;
+}
+
+.google-sign-in-button:hover {
+  background: #f8f9fa;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.google-sign-in-button:active {
+  background: #f1f3f4;
+}
+
+.google-sign-in-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .primary-button,
 .add-button,
 .floating-cart {
@@ -392,6 +424,27 @@ input {
   font-size: 12px;
   line-height: 1.4;
   margin-top: 10px;
+}
+
+.loading-screen {
+  align-items: center;
+  display: flex;
+  height: 100vh;
+  justify-content: center;
+  width: 100%;
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+  border: 3px solid var(--line);
+  border-radius: 50%;
+  border-top-color: var(--brand);
+  height: 40px;
+  width: 40px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .menu-search {

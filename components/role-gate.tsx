@@ -22,11 +22,9 @@ export function RoleGate({
 
   if (!authReady) {
     return (
-      <main className="access-screen">
-        <section className="access-panel">
-          <p className="muted">Checking access...</p>
-        </section>
-      </main>
+      <div className="loading-screen">
+        <div className="spinner" />
+      </div>
     );
   }
 
@@ -38,9 +36,10 @@ export function RoleGate({
     return (
       <main className="access-screen">
         <AuthPanel
+          mode="credentials"
           demoRole={role}
           title={`Sign in for ${role} access`}
-          description={`Use the phone number tied to your ${role} account. Access is granted from your Firebase role claim after sign-in.`}
+          description={`Enter the email and password for your ${role} account.`}
         />
       </main>
     );

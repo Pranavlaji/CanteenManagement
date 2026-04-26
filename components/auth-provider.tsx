@@ -3,47 +3,29 @@
 import { UserProfile } from "@/lib/types";
 import { auth, db, firebaseAuthEnabled } from "@/lib/firebase";
 import {
-  ConfirmationResult,
-  RecaptchaVerifier,
   AuthError,
+  GoogleAuthProvider,
   getIdTokenResult,
   onAuthStateChanged,
-  signInWithPhoneNumber,
+  signInWithEmailAndPassword,
+  signInWithPopup,
   signOut as firebaseSignOut,
-  updateProfile
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-
-declare global {
-  interface Window {
-    recaptchaVerifier?: RecaptchaVerifier;
-  }
-}
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 type AuthContextValue = {
   userProfile: UserProfile | null;
   authReady: boolean;
   authError: string | null;
-  otpRequested: boolean;
-  requestOtp: (profile: { name: string; phone: string }) => Promise<void>;
-  confirmOtp: (code: string) => Promise<void>;
-  cancelOtp: () => void;
-  signInDemo: (profile: Omit<UserProfile, "uid" | "role"> & { role?: UserProfile["role"] }) => void;
+  signInWithGoogle: () => Promise<void>;
+  signInWithCredentials: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const AUTH_STORAGE_KEY = "canteen.demo.user";
-
-function normalizePhoneNumber(phone: string) {
-  const trimmed = phone.trim();
-  if (!trimmed) return "";
-  if (trimmed.startsWith("+")) {
-    return `+${trimmed.slice(1).replace(/\D/g, "")}`;
-  }
-  return trimmed.replace(/\D/g, "");
-}
+const googleProvider = new GoogleAuthProvider();
 
 function describeAuthError(error: unknown) {
   if (!error || typeof error !== "object" || !("code" in error)) {
@@ -52,18 +34,22 @@ function describeAuthError(error: unknown) {
 
   const authError = error as AuthError;
   switch (authError.code) {
-    case "auth/invalid-phone-number":
-      return "Use a full phone number with country code, like +919876543210.";
+    case "auth/popup-closed-by-user":
+      return "Sign-in popup was closed. Try again when you're ready.";
+    case "auth/cancelled-popup-request":
+      return null; // Not an error, just a duplicate popup
+    case "auth/popup-blocked":
+      return "Your browser blocked the sign-in popup. Allow popups for this site and try again.";
+    case "auth/account-exists-with-different-credential":
+      return "An account already exists with the same email but a different sign-in method.";
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Invalid username or password.";
     case "auth/too-many-requests":
-      return "Too many OTP attempts right now. Please wait a bit and try again.";
-    case "auth/quota-exceeded":
-      return "Firebase has hit the SMS quota for this project. Add a test number or try again later.";
-    case "auth/captcha-check-failed":
-      return "reCAPTCHA verification failed. Refresh the page and try again.";
-    case "auth/invalid-verification-code":
-      return "That OTP code is incorrect. Please try again.";
-    case "auth/missing-phone-number":
-      return "Enter your phone number to continue.";
+      return "Too many sign-in attempts. Please wait a bit and try again.";
+    case "auth/unauthorized-domain":
+      return "This domain isn't authorized for sign-in. Add it in Firebase Console → Auth → Settings → Authorized domains.";
     default:
       return authError.message || "Authentication failed. Please try again.";
   }
@@ -73,10 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [otpRequested, setOtpRequested] = useState(false);
-  const confirmationRef = useRef<ConfirmationResult | null>(null);
-  const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
-  const pendingProfileRef = useRef<{ name: string; phone: string } | null>(null);
 
   useEffect(() => {
     if (!firebaseAuthEnabled || !auth) {
@@ -116,110 +98,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserProfile({
           uid: user.uid,
           name,
+          email: user.email ?? "",
           phone: user.phoneNumber ?? "",
           role
         });
       } catch {
-        setAuthError("We couldn't load your account details. Try refreshing once.");
+        // Still sign them in with basic info from Firebase Auth even if
+        // Firestore or token enrichment fails
+        setUserProfile({
+          uid: user.uid,
+          name: user.displayName?.trim() || "Student",
+          email: user.email ?? "",
+          phone: user.phoneNumber ?? "",
+          role: "student"
+        });
       } finally {
         setAuthReady(true);
       }
     });
   }, []);
 
-  function ensureRecaptcha() {
-    if (!auth) {
-      throw new Error("Firebase auth is not configured.");
-    }
-    if (recaptchaRef.current) {
-      return recaptchaRef.current;
-    }
-    const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
-      size: "invisible"
-    });
-    window.recaptchaVerifier = verifier;
-    recaptchaRef.current = verifier;
-    return verifier;
-  }
-
-  function resetRecaptcha() {
-    if (recaptchaRef.current) {
-      try { recaptchaRef.current.clear(); } catch { /* already cleared */ }
-      recaptchaRef.current = null;
-      window.recaptchaVerifier = undefined;
-    }
-  }
-
-  async function requestOtp(profile: { name: string; phone: string }) {
+  async function signInWithGoogle() {
     if (!firebaseAuthEnabled || !auth) {
-      setAuthError("Firebase Auth is not configured in this environment yet.");
+      setAuthError("Firebase Auth is not configured in this environment.");
       return;
     }
     setAuthError(null);
-    const name = profile.name.trim();
-    const phone = normalizePhoneNumber(profile.phone);
-    if (!name || !phone) {
-      setAuthError("Enter both your name and phone number.");
-      return;
-    }
-
-    if (!phone.startsWith("+")) {
-      setAuthError("Use the phone number with country code, like +919876543210.");
-      return;
-    }
 
     try {
-      const verifier = ensureRecaptcha();
-      confirmationRef.current = await signInWithPhoneNumber(auth, phone, verifier);
-      pendingProfileRef.current = { name, phone };
-      setOtpRequested(true);
-    } catch (error) {
-      console.error("OTP request failed:", error);
-      resetRecaptcha();
-      setAuthError(describeAuthError(error));
-    }
-  }
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
 
-  async function confirmOtp(code: string) {
-    if (!confirmationRef.current) {
-      setAuthError("Request an OTP first.");
-      return;
-    }
-    const cleanCode = code.trim();
-    if (!cleanCode) {
-      setAuthError("Enter the OTP code to continue.");
-      return;
-    }
-
-    setAuthError(null);
-    try {
-      const result = await confirmationRef.current.confirm(cleanCode);
-      const pending = pendingProfileRef.current;
-      if (pending) {
-        if (result.user.displayName !== pending.name) {
-          await updateProfile(result.user, { displayName: pending.name });
-        }
-        if (db) {
-          await setDoc(doc(db, "users", result.user.uid), {
-            name: pending.name,
-            phone: result.user.phoneNumber ?? pending.phone,
-            updatedAt: serverTimestamp()
-          }, { merge: true });
-        }
+      // Save/update user doc in Firestore
+      if (db) {
+        await setDoc(doc(db, "users", user.uid), {
+          name: user.displayName ?? "Student",
+          email: user.email ?? "",
+          phone: user.phoneNumber ?? "",
+          updatedAt: serverTimestamp()
+        }, { merge: true });
       }
-      confirmationRef.current = null;
-      pendingProfileRef.current = null;
-      setOtpRequested(false);
     } catch (error) {
-      setAuthError(describeAuthError(error));
+      console.error("Google sign-in failed:", error);
+      const message = describeAuthError(error);
+      if (message) setAuthError(message);
     }
   }
 
-  function cancelOtp() {
-    confirmationRef.current = null;
-    pendingProfileRef.current = null;
-    setOtpRequested(false);
+  async function signInWithCredentials(username: string, password: string) {
+    if (!firebaseAuthEnabled || !auth) {
+      setAuthError("Firebase Auth is not configured in this environment.");
+      return;
+    }
     setAuthError(null);
+
+    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedPassword = password.trim();
+    if (!trimmedUsername || !trimmedPassword) {
+      setAuthError("Enter both username and password.");
+      return;
+    }
+
+    // Firebase requires an email, so we append a hidden domain to the username
+    const formattedEmail = `${trimmedUsername}@canteen.internal`;
+
+    try {
+      await signInWithEmailAndPassword(auth, formattedEmail, trimmedPassword);
+    } catch (error) {
+      console.error("Email sign-in failed:", error);
+      setAuthError(describeAuthError(error) ?? "Sign-in failed.");
+    }
   }
 
   const value = useMemo<AuthContextValue>(
@@ -227,29 +175,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userProfile,
       authReady,
       authError,
-      otpRequested,
-      requestOtp,
-      confirmOtp,
-      cancelOtp,
-      signInDemo: ({ name, phone, role = "student" }) => {
-        if (firebaseAuthEnabled) {
-          setAuthError("Demo sign-in is disabled when Firebase Auth is enabled.");
-          return;
-        }
-        const profile = {
-          uid: `demo_${phone.replace(/\D/g, "") || "student"}`,
-          name,
-          phone,
-          role
-        };
-        window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(profile));
-        setUserProfile(profile);
-      },
+      signInWithGoogle,
+      signInWithCredentials,
       signOut: async () => {
         setAuthError(null);
-        confirmationRef.current = null;
-        pendingProfileRef.current = null;
-        setOtpRequested(false);
         if (firebaseAuthEnabled && auth) {
           await firebaseSignOut(auth);
           return;
@@ -258,13 +187,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUserProfile(null);
       }
     }),
-    [authError, authReady, otpRequested, userProfile]
+    [authError, authReady, userProfile]
   );
 
   return (
     <AuthContext.Provider value={value}>
       {children}
-      <div id="recaptcha-container" />
     </AuthContext.Provider>
   );
 }

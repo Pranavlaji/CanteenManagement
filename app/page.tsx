@@ -146,11 +146,9 @@ export default function Home() {
           ) : null}
         </section>
         {!authReady ? (
-          <section className="workspace solo">
-            <div className="panel">
-              <p className="muted">Loading your account...</p>
-            </div>
-          </section>
+          <div className="loading-screen">
+            <div className="spinner" />
+          </div>
         ) : null}
         <section className="workspace">
           <MenuGrid items={menu} onAdd={addToCart} />
@@ -163,7 +161,7 @@ export default function Home() {
           <CartReview
             cart={cart}
             signedIn={Boolean(userProfile)}
-            phone={userProfile?.phone ?? "+91-974690051"}
+            phone={userProfile?.email || userProfile?.name || ""}
             paying={paying}
             onClose={() => setCartOpen(false)}
             onQuantityChange={updateQuantity}
@@ -188,7 +186,7 @@ export default function Home() {
               </button>
               <AuthPanel
                 title="Sign in to checkout"
-                description="A one-time phone sign-in ties your orders, refunds, and support to the right student."
+                description="Sign in with Google to place your order. One tap, no passwords."
               />
             </div>
           </div>
