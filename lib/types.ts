@@ -31,6 +31,8 @@ export type Order = {
   totalPaisa: number;
   status: OrderStatus;
   paymentStatus: "captured" | "refunded" | "refund_pending" | "refund_failed";
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
   createdAt: string;
   updatedAt: string;
 };

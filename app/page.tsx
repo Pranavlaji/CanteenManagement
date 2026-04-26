@@ -65,46 +65,142 @@ export default function Home() {
     );
   }
 
-  function placeDemoOrder() {
+  async function placeRazorpayOrder() {
     if (!userProfile || cart.length === 0) return;
     setPaying(true);
+
     const totalPaisa = cart.reduce(
       (sum, item) => sum + item.item.pricePaisa * item.quantity,
       0
     );
-    const now = new Date();
-    const nextOrder: Order = {
-      id: `order_${now.getTime()}`,
-      token: Math.floor(Math.random() * 900) + 100, // 3-digit random token
-      userId: userProfile.uid,
-      customerName: userProfile.name,
-      items: cart.map((cartItem) => ({
-        itemId: cartItem.item.id,
-        name: cartItem.item.name,
-        pricePaisa: cartItem.item.pricePaisa,
-        quantity: cartItem.quantity
-      })),
-      totalPaisa,
-      status: "placed",
-      paymentStatus: "captured",
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString()
-    };
 
-    // Optimistic UI update
-    setOrders((current) => [nextOrder, ...current]);
-    setCart([]);
-    setCartOpen(false);
-    
-    // Save to Firestore
-    createOrderInStore(nextOrder).then(() => {
+    try {
+      // 1. Create order on backend
+      const res = await fetch("/api/create-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: totalPaisa }),
+      });
+      const orderData = await res.json();
+
+      if (!res.ok) {
+        throw new Error(orderData.error || "Failed to create order");
+      }
+
+      // 2. Load Razorpay script dynamically
+      const loadScript = () => {
+        return new Promise((resolve) => {
+          if ((window as any).Razorpay) {
+            resolve(true);
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = "https://checkout.razorpay.com/v1/checkout.js";
+          script.onload = () => resolve(true);
+          script.onerror = () => resolve(false);
+          document.body.appendChild(script);
+        });
+      };
+
+      const resLoaded = await loadScript();
+      if (!resLoaded) {
+        throw new Error("Razorpay SDK failed to load. Please check your connection.");
+      }
+
+      // 3. Initialize Razorpay options
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "Canteen Checkout",
+        description: "Food Order",
+        order_id: orderData.id,
+        handler: async function (response: any) {
+          try {
+            // 4. Verify payment signature on backend
+            const verifyRes = await fetch("/api/verify-payment", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }),
+            });
+
+            const verifyData = await verifyRes.json();
+
+            if (!verifyRes.ok) {
+              throw new Error(verifyData.error || "Payment verification failed");
+            }
+
+            // 5. Success! Save to Firestore
+            const now = new Date();
+            const nextOrder: Order = {
+              id: `order_${now.getTime()}`,
+              token: Math.floor(Math.random() * 900) + 100, // 3-digit random token
+              userId: userProfile.uid,
+              customerName: userProfile.name,
+              items: cart.map((cartItem) => ({
+                itemId: cartItem.item.id,
+                name: cartItem.item.name,
+                pricePaisa: cartItem.item.pricePaisa,
+                quantity: cartItem.quantity
+              })),
+              totalPaisa,
+              status: "placed",
+              paymentStatus: "captured",
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              createdAt: now.toISOString(),
+              updatedAt: now.toISOString()
+            };
+
+            // Optimistic UI update
+            setOrders((current) => [nextOrder, ...current]);
+            setCart([]);
+            setCartOpen(false);
+            
+            // Save to Firestore
+            await createOrderInStore(nextOrder);
+            
+            setPaying(false);
+            router.push("/tokens");
+          } catch (verifyError) {
+            console.error("Payment verification failed", verifyError);
+            alert("Payment verification failed. Please contact support.");
+            setPaying(false);
+          }
+        },
+        prefill: {
+          name: userProfile.name,
+          email: userProfile.email || "student@canteen.internal",
+          contact: userProfile.phone || "",
+        },
+        theme: {
+          color: "#0f172a", // Match your app theme
+        },
+      };
+
+      const paymentObject = new (window as any).Razorpay(options);
+      
+      paymentObject.on("payment.failed", function (response: any) {
+        alert(`Payment Failed: ${response.error.description}`);
+        setPaying(false);
+      });
+
+      // Handle user closing the modal
+      paymentObject.on("payment.modal.closed", function () {
+        setPaying(false);
+      });
+
+      paymentObject.open();
+
+    } catch (error) {
+      console.error("Checkout error:", error);
+      alert(error instanceof Error ? error.message : "Failed to initiate payment");
       setPaying(false);
-      router.push("/tokens");
-    }).catch((err) => {
-      console.error(err);
-      setPaying(false);
-      alert("Failed to place order.");
-    });
+    }
   }
 
   const studentOrders = userProfile
@@ -162,7 +258,7 @@ export default function Home() {
             paying={paying}
             onClose={() => setCartOpen(false)}
             onQuantityChange={updateQuantity}
-            onOrderNow={placeDemoOrder}
+            onOrderNow={placeRazorpayOrder}
             onSignIn={() => {
               setCartOpen(false);
               setAuthModalOpen(true);
