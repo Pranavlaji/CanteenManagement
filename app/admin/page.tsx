@@ -4,12 +4,31 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 import { AppShell } from "@/components/app-shell";
 import { RoleGate } from "@/components/role-gate";
 import { seedMenu, seedOrders } from "@/lib/mock-data";
+import { readOrders } from "@/lib/order-store";
 import { LayoutDashboard } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AdminPage() {
-  const [orders] = useState(seedOrders);
+  const [orders, setOrders] = useState(seedOrders);
   const [menu, setMenu] = useState(seedMenu);
+
+  useEffect(() => {
+    setOrders(readOrders(seedOrders));
+
+    function syncOrders() {
+      setOrders(readOrders(seedOrders));
+    }
+
+    window.addEventListener("storage", syncOrders);
+    window.addEventListener("canteen-orders-updated", syncOrders);
+    window.addEventListener("focus", syncOrders);
+
+    return () => {
+      window.removeEventListener("storage", syncOrders);
+      window.removeEventListener("canteen-orders-updated", syncOrders);
+      window.removeEventListener("focus", syncOrders);
+    };
+  }, []);
 
   function toggleAvailability(itemId: string) {
     setMenu((current) =>

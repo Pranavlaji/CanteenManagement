@@ -14,6 +14,8 @@ const firebaseConfig = {
 export const firebaseEnabled = Boolean(
   firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId
 );
+export const firebaseAuthEnabled =
+  firebaseEnabled && process.env.NEXT_PUBLIC_ENABLE_FIREBASE_AUTH === "true";
 
 export const app = firebaseEnabled && !getApps().length ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;

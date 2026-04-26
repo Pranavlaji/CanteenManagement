@@ -1,29 +1,48 @@
 "use client";
 
-import { AppShell } from "@/components/app-shell";
 import { AuthPanel } from "@/components/auth-panel";
 import { CartPanel } from "@/components/cart-panel";
+import { CartReview } from "@/components/cart-review";
 import { MenuGrid } from "@/components/menu-grid";
-import { OrderTracker } from "@/components/order-tracker";
 import { useAuth } from "@/components/auth-provider";
 import { seedMenu } from "@/lib/mock-data";
+import { readOrders, writeOrders } from "@/lib/order-store";
 import { CartItem, MenuItem, Order } from "@/lib/types";
-import { ReceiptText, Utensils } from "lucide-react";
-import { useMemo, useState } from "react";
-
-type View = "menu" | "orders";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 export default function Home() {
-  const { userProfile } = useAuth();
-  const [view, setView] = useState<View>("menu");
+  const { authReady, userProfile } = useAuth();
+  const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [menu] = useState(seedMenu);
 
-  const activeOrder = useMemo(
-    () => orders.find((order) => !["completed", "cancelled"].includes(order.status)),
-    [orders]
-  );
+  useEffect(() => {
+    setOrders(readOrders([]));
+
+    function syncOrders() {
+      setOrders(readOrders([]));
+    }
+
+    window.addEventListener("storage", syncOrders);
+    window.addEventListener("canteen-orders-updated", syncOrders);
+    window.addEventListener("focus", syncOrders);
+
+    return () => {
+      window.removeEventListener("storage", syncOrders);
+      window.removeEventListener("canteen-orders-updated", syncOrders);
+      window.removeEventListener("focus", syncOrders);
+    };
+  }, []);
+
+  // Auto-close auth modal when sign-in completes
+  useEffect(() => {
+    if (userProfile) setAuthModalOpen(false);
+  }, [userProfile]);
 
   function addToCart(item: MenuItem) {
     if (!item.available) return;
@@ -55,6 +74,7 @@ export default function Home() {
 
   function placeDemoOrder() {
     if (!userProfile || cart.length === 0) return;
+    setPaying(true);
     const totalPaisa = cart.reduce(
       (sum, item) => sum + item.item.pricePaisa * item.quantity,
       0
@@ -62,7 +82,7 @@ export default function Home() {
     const now = new Date();
     const nextOrder: Order = {
       id: `order_${now.getTime()}`,
-      token: orders.length + 47,
+      token: Math.max(46, ...orders.map((order) => order.token)) + 1,
       userId: userProfile.uid,
       customerName: userProfile.name,
       items: cart.map((cartItem) => ({
@@ -77,79 +97,103 @@ export default function Home() {
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
-    setOrders((current) => [nextOrder, ...current]);
-    setCart([]);
-    setView("orders");
+    window.setTimeout(() => {
+      setOrders((current) => {
+        const nextOrders = [nextOrder, ...current];
+        writeOrders(nextOrders);
+        return nextOrders;
+      });
+      setCart([]);
+      setCartOpen(false);
+      setPaying(false);
+      router.push("/tokens");
+    }, 700);
   }
 
-  function transitionOrder(orderId: string, status: Order["status"]) {
-    setOrders((current) =>
-      current.map((order) =>
-        order.id === orderId
-          ? { ...order, status, updatedAt: new Date().toISOString() }
-          : order
-      )
-    );
-  }
-
-  const tabs = [
-    { id: "menu" as const, label: "Menu", icon: Utensils },
-    { id: "orders" as const, label: "Orders", icon: ReceiptText }
-  ];
+  const studentOrders = userProfile
+    ? orders.filter((order) => order.userId === userProfile.uid && order.status !== "cancelled")
+    : [];
+  const headerTokens = studentOrders
+    .filter((order) => !["cancelled", "completed"].includes(order.status))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 2);
 
   return (
-    <AppShell
-      tabs={tabs}
-      currentView={view}
-      onViewChange={setView}
-      cartCount={cart.reduce((sum, item) => sum + item.quantity, 0)}
-    >
-      {view === "menu" && (
-        <main className="student-screen">
-          <section className="student-hero">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Today&apos;s menu</p>
-                <h1>
-                  Hey,
-                  <span>{userProfile ? userProfile.name.split(" ")[0] : "what's up"}?</span>
-                </h1>
-                <p className="hero-copy">
-                  Pick your canteen favourites, pay from your phone, and collect with a token.
-                </p>
-              </div>
-              <div className="status-pill">Open now</div>
+    <div className="student-app">
+      <main className="student-screen">
+        <section className="student-hero">
+          <div>
+            <h1>Hey,</h1>
+            <p>Ready to Order?</p>
+          </div>
+          {headerTokens.length > 0 ? (
+            <button
+              className="student-token-tray"
+              onClick={() => router.push("/tokens")}
+              title="Check on your orders!"
+              type="button"
+            >
+              <span className="sr-only">Check on your orders!</span>
+              {headerTokens.map((order) => (
+                <span
+                  className={order.status === "ready" ? "student-token ready" : "student-token"}
+                  key={order.id}
+                >
+                  {order.token}
+                </span>
+              ))}
+            </button>
+          ) : null}
+        </section>
+        {!authReady ? (
+          <section className="workspace solo">
+            <div className="panel">
+              <p className="muted">Loading your account...</p>
             </div>
-            {!userProfile && <AuthPanel />}
           </section>
-          <section className="workspace">
-            <MenuGrid items={menu} onAdd={addToCart} />
-          </section>
-          <CartPanel
+        ) : null}
+        <section className="workspace">
+          <MenuGrid items={menu} onAdd={addToCart} />
+        </section>
+        <CartPanel
+          cart={cart}
+          onViewCart={() => setCartOpen(true)}
+        />
+        {cartOpen && (
+          <CartReview
             cart={cart}
-            activeOrder={activeOrder}
+            signedIn={Boolean(userProfile)}
+            phone={userProfile?.phone ?? "+91-974690051"}
+            paying={paying}
+            onClose={() => setCartOpen(false)}
             onQuantityChange={updateQuantity}
-            onCheckout={placeDemoOrder}
+            onOrderNow={placeDemoOrder}
+            onSignIn={() => {
+              setCartOpen(false);
+              setAuthModalOpen(true);
+            }}
+            onAddMore={() => setCartOpen(false)}
           />
-        </main>
-      )}
-
-      {view === "orders" && (
-        userProfile ? (
-          <OrderTracker orders={orders} onCancel={(id) => transitionOrder(id, "cancelled")} />
-        ) : (
-          <main className="workspace solo">
-            <AuthPanel />
-          </main>
-        )
-      )}
-
-      {cart.length > 0 && view !== "menu" && (
-        <button className="floating-cart" onClick={() => setView("menu")} type="button">
-          Back to cart
-          <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span>
-        </button>
-      )}
-    </AppShell>
+        )}
+        {authModalOpen && !userProfile && (
+          <div className="auth-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setAuthModalOpen(false); }}>
+            <div className="auth-modal">
+              <button
+                className="auth-modal-close"
+                onClick={() => setAuthModalOpen(false)}
+                type="button"
+                aria-label="Close sign-in"
+              >
+                ✕
+              </button>
+              <AuthPanel
+                title="Sign in to checkout"
+                description="A one-time phone sign-in ties your orders, refunds, and support to the right student."
+              />
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

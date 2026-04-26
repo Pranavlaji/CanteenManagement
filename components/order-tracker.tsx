@@ -1,56 +1,49 @@
 "use client";
 
-import { money, timeAgo } from "@/lib/format";
 import { Order } from "@/lib/types";
-import { CircleCheck, TimerReset } from "lucide-react";
+import { X } from "lucide-react";
 
 export function OrderTracker({
   orders,
-  onCancel
+  onClose
 }: {
   orders: Order[];
-  onCancel: (orderId: string) => void;
+  onClose: () => void;
 }) {
+  const visibleOrders = orders
+    .filter((order) => !["cancelled", "completed"].includes(order.status))
+    .sort((a, b) => {
+      if (a.status === "ready" && b.status !== "ready") return -1;
+      if (a.status !== "ready" && b.status === "ready") return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  const hasReadyOrder = visibleOrders.some((order) => order.status === "ready");
+
   return (
-    <main className="workspace solo">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Student orders</p>
-          <h1>Track tokens and refunds.</h1>
-        </div>
-      </div>
-      {orders.length === 0 ? (
-        <div className="empty-state">No orders yet. Place one from the menu.</div>
+    <main className={`token-screen ${hasReadyOrder ? "ready" : ""}`}>
+      <header className="token-screen-hero">
+        <button className="token-screen-close" onClick={onClose} type="button" aria-label="Close token screen">
+          <X size={30} />
+        </button>
+        <h1>Check on your orders!</h1>
+      </header>
+
+      {visibleOrders.length === 0 ? (
+        <div className="token-empty-state">No active tokens yet.</div>
       ) : (
-        <div className="order-list">
-          {orders.map((order) => {
-            const cancellable =
-              order.status === "placed" &&
-              Date.now() - new Date(order.createdAt).getTime() < 90_000;
+        <section className="token-card-list" aria-label="Active order tokens">
+          {visibleOrders.map((order) => {
+            const isReady = order.status === "ready";
             return (
-              <article className="order-card" key={order.id}>
-                <div className="token-block">
-                  <span>Token</span>
-                  <strong>T-{order.token}</strong>
+              <article className={`token-status-card ${isReady ? "ready" : ""}`} key={order.id}>
+                <div className="token-number-ring">
+                  <strong>{order.token}</strong>
                 </div>
-                <div className="order-main">
-                  <div className="order-title-row">
-                    <h3>{order.status}</h3>
-                    <span>{money(order.totalPaisa)}</span>
-                  </div>
-                  <p>{order.items.map((item) => `${item.quantity}x ${item.name}`).join(", ")}</p>
-                  <div className="meta-row">
-                    <span><TimerReset size={15} /> {timeAgo(order.createdAt)} ago</span>
-                    <span><CircleCheck size={15} /> {order.paymentStatus}</span>
-                  </div>
-                </div>
-                <button disabled={!cancellable} onClick={() => onCancel(order.id)} type="button">
-                  Cancel
-                </button>
+                <span>{isReady ? "Cooked" : "Cooking"}</span>
               </article>
             );
           })}
-        </div>
+        </section>
       )}
     </main>
   );
