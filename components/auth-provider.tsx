@@ -109,15 +109,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           phone: user.phoneNumber ?? "",
           role
         });
-      } catch {
+      } catch (err) {
+        console.error("Failed to fetch full profile. Using fallback.", err);
+        let fallbackRole: UserProfile["role"] = "student";
+        if (user.email?.endsWith("@canteen.internal")) {
+          fallbackRole = user.email.startsWith("admin") ? "admin" : "staff";
+        }
+        
         // Still sign them in with basic info from Firebase Auth even if
         // Firestore or token enrichment fails
         setUserProfile({
           uid: user.uid,
-          name: user.displayName?.trim() || "Student",
+          name: user.displayName?.trim() || "Staff Member",
           email: user.email ?? "",
           phone: user.phoneNumber ?? "",
-          role: "student"
+          role: fallbackRole
         });
       } finally {
         setAuthReady(true);
