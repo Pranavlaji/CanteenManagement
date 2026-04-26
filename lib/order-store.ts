@@ -54,6 +54,8 @@ export function subscribeToStaffOrders(callback: (orders: Order[]) => void) {
       orders.push(data);
     });
     callback(orders);
+  }, (error) => {
+    console.error("Staff orders listener error:", error);
   });
 }
 
@@ -86,6 +88,8 @@ export function subscribeToStudentOrders(userId: string, callback: (orders: Orde
       orders.push(doc.data() as Order);
     });
     callback(orders);
+  }, (error) => {
+    console.error("Student orders listener error:", error);
   });
 }
 
