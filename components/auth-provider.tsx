@@ -15,12 +15,18 @@ import {
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 
+declare global {
+  interface Window {
+    recaptchaVerifier?: RecaptchaVerifier;
+  }
+}
+
 type AuthContextValue = {
   userProfile: UserProfile | null;
   authReady: boolean;
   authError: string | null;
   otpRequested: boolean;
-  requestOtp: (profile: { name: string; phone: string }, containerId: string) => Promise<void>;
+  requestOtp: (profile: { name: string; phone: string }) => Promise<void>;
   confirmOtp: (code: string) => Promise<void>;
   cancelOtp: () => void;
   signInDemo: (profile: Omit<UserProfile, "uid" | "role"> & { role?: UserProfile["role"] }) => void;
@@ -121,22 +127,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  async function ensureRecaptcha(containerId: string) {
+  function ensureRecaptcha() {
     if (!auth) {
       throw new Error("Firebase auth is not configured.");
     }
     if (recaptchaRef.current) {
       return recaptchaRef.current;
     }
-    const verifier = new RecaptchaVerifier(auth, containerId, {
+    const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
       size: "invisible"
     });
-    await verifier.render();
+    window.recaptchaVerifier = verifier;
     recaptchaRef.current = verifier;
     return verifier;
   }
 
-  async function requestOtp(profile: { name: string; phone: string }, containerId: string) {
+  function resetRecaptcha() {
+    if (recaptchaRef.current) {
+      try { recaptchaRef.current.clear(); } catch { /* already cleared */ }
+      recaptchaRef.current = null;
+      window.recaptchaVerifier = undefined;
+    }
+  }
+
+  async function requestOtp(profile: { name: string; phone: string }) {
     if (!firebaseAuthEnabled || !auth) {
       setAuthError("Firebase Auth is not configured in this environment yet.");
       return;
@@ -155,11 +169,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      const verifier = await ensureRecaptcha(containerId);
+      const verifier = ensureRecaptcha();
       confirmationRef.current = await signInWithPhoneNumber(auth, phone, verifier);
       pendingProfileRef.current = { name, phone };
       setOtpRequested(true);
     } catch (error) {
+      console.error("OTP request failed:", error);
+      resetRecaptcha();
       setAuthError(describeAuthError(error));
     }
   }
@@ -245,7 +261,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [authError, authReady, otpRequested, userProfile]
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+      <div id="recaptcha-container" />
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {

@@ -3,7 +3,7 @@
 import { useAuth } from "@/components/auth-provider";
 import { firebaseAuthEnabled } from "@/lib/firebase";
 import { ArrowLeft, ShieldCheck, Smartphone } from "lucide-react";
-import { useId, useState } from "react";
+import { useState } from "react";
 
 export function AuthPanel({
   title = "Create your student account",
@@ -26,7 +26,6 @@ export function AuthPanel({
   const [name, setName] = useState("Pranav");
   const [phone, setPhone] = useState("+919000000000");
   const [otpCode, setOtpCode] = useState("");
-  const recaptchaId = useId().replace(/:/g, "_");
 
   return (
     <div className="panel">
@@ -82,7 +81,7 @@ export function AuthPanel({
             className="primary-button"
             onClick={() => (
               firebaseAuthEnabled
-                ? requestOtp({ name, phone }, recaptchaId)
+                ? requestOtp({ name, phone })
                 : signInDemo({ name, phone, role: demoRole })
             )}
             type="button"
@@ -92,7 +91,6 @@ export function AuthPanel({
           </button>
         </>
       )}
-      <div id={recaptchaId} />
       <p className="fine-print">
         {firebaseAuthEnabled
           ? "Firebase Phone Auth is enabled. We'll send an OTP to finish sign-in."
