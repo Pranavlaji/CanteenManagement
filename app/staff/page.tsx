@@ -3,7 +3,7 @@
 import { RoleGate } from "@/components/role-gate";
 import { StaffQueue } from "@/components/staff-queue";
 import { seedMenu, seedOrders } from "@/lib/mock-data";
-import { readOrders, updateOrderStatus, writeOrders } from "@/lib/order-store";
+import { subscribeToStaffOrders, updateOrderStatusInStore } from "@/lib/order-store";
 import { OrderStatus } from "@/lib/types";
 import { useEffect, useState } from "react";
 
@@ -15,31 +15,27 @@ export default function StaffPage() {
   const [viewedOrderIds, setViewedOrderIds] = useState<string[]>([]);
 
   useEffect(() => {
-    setOrders(readOrders(seedOrders));
     setViewedOrderIds(readViewedOrders());
-
-    function syncOrders() {
-      setOrders(readOrders(seedOrders));
-      setViewedOrderIds(readViewedOrders());
-    }
-
-    window.addEventListener("storage", syncOrders);
-    window.addEventListener("canteen-orders-updated", syncOrders);
-    window.addEventListener("focus", syncOrders);
+    const unsubscribe = subscribeToStaffOrders((fetchedOrders) => {
+      // In demo mode with empty local storage, we might still want to show seedOrders
+      // if it's completely empty, but let's just use what's returned.
+      setOrders(fetchedOrders);
+    });
 
     return () => {
-      window.removeEventListener("storage", syncOrders);
-      window.removeEventListener("canteen-orders-updated", syncOrders);
-      window.removeEventListener("focus", syncOrders);
+      unsubscribe();
     };
   }, []);
 
   function transitionOrder(orderId: string, status: OrderStatus) {
-    setOrders((current) => {
-      const nextOrders = updateOrderStatus(current, orderId, status);
-      writeOrders(nextOrders);
-      return nextOrders;
-    });
+    // Optimistic update
+    setOrders((current) =>
+      current.map((order) =>
+        order.id === orderId ? { ...order, status, updatedAt: new Date().toISOString() } : order
+      )
+    );
+    // Real update
+    updateOrderStatusInStore(orderId, status).catch(console.error);
   }
 
   function toggleAvailability(itemId: string) {

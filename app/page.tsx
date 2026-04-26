@@ -6,7 +6,7 @@ import { CartReview } from "@/components/cart-review";
 import { MenuGrid } from "@/components/menu-grid";
 import { useAuth } from "@/components/auth-provider";
 import { seedMenu } from "@/lib/mock-data";
-import { readOrders, writeOrders } from "@/lib/order-store";
+import { subscribeToStudentOrders, createOrderInStore } from "@/lib/order-store";
 import { CartItem, MenuItem, Order } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -22,22 +22,15 @@ export default function Home() {
   const [menu] = useState(seedMenu);
 
   useEffect(() => {
-    setOrders(readOrders([]));
-
-    function syncOrders() {
-      setOrders(readOrders([]));
+    if (!userProfile) {
+      setOrders([]);
+      return;
     }
-
-    window.addEventListener("storage", syncOrders);
-    window.addEventListener("canteen-orders-updated", syncOrders);
-    window.addEventListener("focus", syncOrders);
-
-    return () => {
-      window.removeEventListener("storage", syncOrders);
-      window.removeEventListener("canteen-orders-updated", syncOrders);
-      window.removeEventListener("focus", syncOrders);
-    };
-  }, []);
+    const unsubscribe = subscribeToStudentOrders(userProfile.uid, (fetchedOrders) => {
+      setOrders(fetchedOrders);
+    });
+    return () => unsubscribe();
+  }, [userProfile]);
 
   // Auto-close auth modal when sign-in completes
   useEffect(() => {
@@ -82,7 +75,7 @@ export default function Home() {
     const now = new Date();
     const nextOrder: Order = {
       id: `order_${now.getTime()}`,
-      token: Math.max(46, ...orders.map((order) => order.token)) + 1,
+      token: Math.floor(Math.random() * 900) + 100, // 3-digit random token
       userId: userProfile.uid,
       customerName: userProfile.name,
       items: cart.map((cartItem) => ({
@@ -97,17 +90,21 @@ export default function Home() {
       createdAt: now.toISOString(),
       updatedAt: now.toISOString()
     };
-    window.setTimeout(() => {
-      setOrders((current) => {
-        const nextOrders = [nextOrder, ...current];
-        writeOrders(nextOrders);
-        return nextOrders;
-      });
-      setCart([]);
-      setCartOpen(false);
+
+    // Optimistic UI update
+    setOrders((current) => [nextOrder, ...current]);
+    setCart([]);
+    setCartOpen(false);
+    
+    // Save to Firestore
+    createOrderInStore(nextOrder).then(() => {
       setPaying(false);
       router.push("/tokens");
-    }, 700);
+    }).catch((err) => {
+      console.error(err);
+      setPaying(false);
+      alert("Failed to place order.");
+    });
   }
 
   const studentOrders = userProfile

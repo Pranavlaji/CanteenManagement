@@ -167,7 +167,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Firebase requires an email, so we append a hidden domain to the username
-    const formattedEmail = `${trimmedUsername}@canteen.internal`;
+    // if the user didn't already type it.
+    const formattedEmail = trimmedUsername.includes("@") 
+      ? trimmedUsername 
+      : `${trimmedUsername}@canteen.internal`;
 
     try {
       await signInWithEmailAndPassword(auth, formattedEmail, trimmedPassword);

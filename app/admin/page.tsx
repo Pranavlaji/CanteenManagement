@@ -4,7 +4,7 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 import { AppShell } from "@/components/app-shell";
 import { RoleGate } from "@/components/role-gate";
 import { seedMenu, seedOrders } from "@/lib/mock-data";
-import { readOrders } from "@/lib/order-store";
+import { subscribeToStaffOrders } from "@/lib/order-store";
 import { LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -13,20 +13,12 @@ export default function AdminPage() {
   const [menu, setMenu] = useState(seedMenu);
 
   useEffect(() => {
-    setOrders(readOrders(seedOrders));
-
-    function syncOrders() {
-      setOrders(readOrders(seedOrders));
-    }
-
-    window.addEventListener("storage", syncOrders);
-    window.addEventListener("canteen-orders-updated", syncOrders);
-    window.addEventListener("focus", syncOrders);
+    const unsubscribe = subscribeToStaffOrders((fetchedOrders) => {
+      setOrders(fetchedOrders);
+    });
 
     return () => {
-      window.removeEventListener("storage", syncOrders);
-      window.removeEventListener("canteen-orders-updated", syncOrders);
-      window.removeEventListener("focus", syncOrders);
+      unsubscribe();
     };
   }, []);
 

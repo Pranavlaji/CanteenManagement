@@ -7,9 +7,10 @@ service cloud.firestore {
     }
 
     function role() {
-      return signedIn() && request.auth.token.role is string
-        ? request.auth.token.role
-        : "student";
+      return !signedIn() ? "student" :
+        (request.auth.token.role is string ? request.auth.token.role :
+        ("email" in request.auth.token && request.auth.token.email.matches('.*@canteen[.]internal') ?
+          (request.auth.token.email.matches('^admin.*') ? 'admin' : 'staff') : "student"));
     }
 
     function staffOrAdmin() {
@@ -37,8 +38,8 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if signedIn()
         && (resource.data.userId == request.auth.uid || staffOrAdmin());
-      allow create: if false;
-      allow update: if false;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn() && staffOrAdmin();
       allow delete: if false;
     }
 

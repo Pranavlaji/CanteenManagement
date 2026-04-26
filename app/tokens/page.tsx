@@ -3,7 +3,7 @@
 import { AuthPanel } from "@/components/auth-panel";
 import { OrderTracker } from "@/components/order-tracker";
 import { useAuth } from "@/components/auth-provider";
-import { readOrders } from "@/lib/order-store";
+import { subscribeToStudentOrders } from "@/lib/order-store";
 import { Order } from "@/lib/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,26 +14,21 @@ export default function TokensPage() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   useEffect(() => {
-    setOrders(readOrders([]));
-
-    function syncOrders() {
-      setOrders(readOrders([]));
+    if (!userProfile) {
+      setOrders([]);
+      return;
     }
 
-    window.addEventListener("storage", syncOrders);
-    window.addEventListener("canteen-orders-updated", syncOrders);
-    window.addEventListener("focus", syncOrders);
+    const unsubscribe = subscribeToStudentOrders(userProfile.uid, (fetchedOrders) => {
+      setOrders(fetchedOrders);
+    });
 
     return () => {
-      window.removeEventListener("storage", syncOrders);
-      window.removeEventListener("canteen-orders-updated", syncOrders);
-      window.removeEventListener("focus", syncOrders);
+      unsubscribe();
     };
-  }, []);
+  }, [userProfile]);
 
-  const studentOrders = userProfile
-    ? orders.filter((order) => order.userId === userProfile.uid)
-    : [];
+  const studentOrders = orders;
 
   if (!authReady) {
     return (
