@@ -83,7 +83,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const token = await getIdTokenResult(user, true);
-        const role = (token.claims.role as UserProfile["role"] | undefined) ?? "student";
+        let role = token.claims.role as UserProfile["role"] | undefined;
+        if (!role) {
+          if (user.email?.endsWith("@canteen.internal")) {
+            role = user.email.startsWith("admin") ? "admin" : "staff";
+          } else {
+            role = "student";
+          }
+        }
         const fallbackName = user.displayName?.trim() || "Student";
         let name = fallbackName;
 
