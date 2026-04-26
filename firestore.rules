@@ -8,9 +8,11 @@ service cloud.firestore {
 
     function role() {
       return !signedIn() ? "student" :
-        (request.auth.token.role is string ? request.auth.token.role :
-        ("email" in request.auth.token && request.auth.token.email.matches('.*@canteen[.]internal') ?
-          (request.auth.token.email.matches('^admin.*') ? 'admin' : 'staff') : "student"));
+        request.auth.token.get("role", 
+          request.auth.token.get("email", "").matches(".*@canteen\\.internal") ? 
+            (request.auth.token.get("email", "").matches("^admin.*") ? "admin" : "staff") 
+          : "student"
+        );
     }
 
     function staffOrAdmin() {
