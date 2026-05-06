@@ -2,15 +2,17 @@
 
 import { RoleGate } from "@/components/role-gate";
 import { StaffQueue } from "@/components/staff-queue";
-import { subscribeToMenu, toggleMenuItemAvailability } from "@/lib/menu-store";
-import { subscribeToStaffOrders, updateOrderStatusInStore } from "@/lib/order-store";
-import { MenuItem, OrderStatus } from "@/lib/types";
+import { useAuth } from "@/components/auth-provider";
+import { subscribeToMenu } from "@/lib/menu-store";
+import { subscribeToStaffOrders } from "@/lib/order-store";
+import { MenuItem, Order, OrderStatus } from "@/lib/types";
 import { useEffect, useState } from "react";
 
 const VIEWED_ORDERS_KEY = "canteen.demo.viewedKitchenOrders";
 
 export default function StaffPage() {
-  const [orders, setOrders] = useState<any[]>([]);
+  const { getIdToken } = useAuth();
+  const [orders, setOrders] = useState<Order[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [viewedOrderIds, setViewedOrderIds] = useState<string[]>([]);
 
@@ -33,21 +35,51 @@ export default function StaffPage() {
     };
   }, []);
 
-  function transitionOrder(orderId: string, status: OrderStatus) {
+  async function authHeaders() {
+    const idToken = await getIdToken();
+    if (!idToken) throw new Error("Please sign in again.");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    };
+  }
+
+  async function transitionOrder(orderId: string, status: OrderStatus) {
+    const previousOrders = orders;
     // Optimistic update
     setOrders((current) =>
       current.map((order) =>
         order.id === orderId ? { ...order, status, updatedAt: new Date().toISOString() } : order
       )
     );
-    // Real update
-    updateOrderStatusInStore(orderId, status).catch(console.error);
+    try {
+      const res = await fetch("/api/orders/status", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ orderId, status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update order status.");
+      }
+      const data = await res.json();
+      if (data.order) {
+        setOrders((current) =>
+          current.map((order) => order.id === orderId ? { ...order, ...data.order } : order)
+        );
+      }
+    } catch (error) {
+      console.error("Failed to update order status:", error);
+      setOrders(previousOrders);
+      window.alert("Could not update the order status. Check your staff role.");
+    }
   }
 
-  function toggleAvailability(itemId: string) {
+  async function toggleAvailability(itemId: string) {
     const item = menu.find((m) => m.id === itemId);
     if (!item) return;
 
+    const previousMenu = menu;
     const nextAvailable = !item.available;
     // Optimistic update
     setMenu((current) =>
@@ -55,16 +87,25 @@ export default function StaffPage() {
         item.id === itemId ? { ...item, available: nextAvailable } : item
       )
     );
-    // Persist to Firestore
-    toggleMenuItemAvailability(itemId, nextAvailable).catch((error) => {
+    try {
+      const res = await fetch("/api/menu", {
+        method: "PATCH",
+        headers: await authHeaders(),
+        body: JSON.stringify({
+          itemId,
+          action: "availability",
+          available: nextAvailable,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update item availability.");
+      }
+    } catch (error) {
       console.error("Failed to update item availability:", error);
-      setMenu((current) =>
-        current.map((item) =>
-          item.id === itemId ? { ...item, available: !nextAvailable } : item
-        )
-      );
+      setMenu(previousMenu);
       window.alert("Could not update item availability. Check Firestore rules and your staff role.");
-    });
+    }
   }
 
   function markOrderViewed(orderId: string) {

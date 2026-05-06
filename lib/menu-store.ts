@@ -1,6 +1,6 @@
 import { MenuItem } from "@/lib/types";
 import { db } from "@/lib/firebase";
-import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { seedMenu } from "@/lib/mock-data";
 
 /**
@@ -44,36 +44,4 @@ export function subscribeToMenu(callback: (items: MenuItem[]) => void) {
       callback(seedMenu);
     }
   );
-}
-
-/**
- * Toggle item availability in Firestore.
- * No-op if Firestore is unavailable.
- */
-export async function toggleMenuItemAvailability(
-  itemId: string,
-  available: boolean
-) {
-  if (!db) return;
-  await updateDoc(doc(db, "menuItems", itemId), { available });
-}
-
-export async function updateMenuItemPrice(
-  itemId: string,
-  pricePaisa: number
-) {
-  if (!db) return;
-  await updateDoc(doc(db, "menuItems", itemId), { pricePaisa });
-}
-
-export async function addMenuItem(
-  item: Omit<MenuItem, "id">
-) {
-  if (!db) return;
-  await addDoc(collection(db, "menuItems"), item);
-}
-
-export async function removeMenuItem(itemId: string) {
-  if (!db) return;
-  await deleteDoc(doc(db, "menuItems", itemId));
 }

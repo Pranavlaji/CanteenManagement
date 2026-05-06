@@ -3,13 +3,15 @@
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { AppShell } from "@/components/app-shell";
 import { RoleGate } from "@/components/role-gate";
-import { addMenuItem, removeMenuItem, subscribeToMenu, updateMenuItemPrice } from "@/lib/menu-store";
+import { useAuth } from "@/components/auth-provider";
+import { subscribeToMenu } from "@/lib/menu-store";
 import { subscribeToStaffOrders } from "@/lib/order-store";
 import { MenuItem } from "@/lib/types";
 import { LayoutDashboard } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export default function AdminPage() {
+  const { getIdToken } = useAuth();
   const [orders, setOrders] = useState<any[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
 
@@ -31,31 +33,69 @@ export default function AdminPage() {
     };
   }, []);
 
+  async function authHeaders() {
+    const idToken = await getIdToken();
+    if (!idToken) throw new Error("Please sign in again.");
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    };
+  }
+
   async function updatePrice(itemId: string, pricePaisa: number) {
     const previousMenu = menu;
     setMenu((current) => current.map((item) => item.id === itemId ? { ...item, pricePaisa } : item));
-    await updateMenuItemPrice(itemId, pricePaisa).catch((error) => {
+    try {
+      const res = await fetch("/api/menu", {
+        method: "PATCH",
+        headers: await authHeaders(),
+        body: JSON.stringify({ itemId, action: "price", pricePaisa }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to update item price.");
+      }
+    } catch (error) {
       console.error("Failed to update item price:", error);
       setMenu(previousMenu);
       window.alert("Could not update the price. Check Firestore rules and your admin role.");
-    });
+    }
   }
 
   async function addDish(item: Omit<MenuItem, "id">) {
-    await addMenuItem(item).catch((error) => {
+    try {
+      const res = await fetch("/api/menu", {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify(item),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to add menu item.");
+      }
+    } catch (error) {
       console.error("Failed to add menu item:", error);
       window.alert("Could not add the item. Check Firestore rules and your admin role.");
-    });
+    }
   }
 
   async function removeDish(itemId: string) {
     const previousMenu = menu;
     setMenu((current) => current.filter((item) => item.id !== itemId));
-    await removeMenuItem(itemId).catch((error) => {
+    try {
+      const res = await fetch(`/api/menu?itemId=${encodeURIComponent(itemId)}`, {
+        method: "DELETE",
+        headers: await authHeaders(),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to remove menu item.");
+      }
+    } catch (error) {
       console.error("Failed to remove menu item:", error);
       setMenu(previousMenu);
       window.alert("Could not remove the item. Check Firestore rules and your admin role.");
-    });
+    }
   }
 
   return (

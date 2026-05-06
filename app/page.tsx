@@ -149,7 +149,6 @@ export default function Home() {
             // 4. Verify payment and create order SERVER-SIDE
             // Get a fresh token in case the old one expired during payment
             const freshToken = await getIdToken();
-            const totalPaisa = orderData._totalPaisa;
 
             const verifyRes = await fetch("/api/verify-payment", {
               method: "POST",
@@ -161,10 +160,6 @@ export default function Home() {
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
-                // Server uses these to create the order document
-                items: orderData._validatedItems,
-                totalPaisa,
-                customerName: userProfile.name,
               }),
             });
 

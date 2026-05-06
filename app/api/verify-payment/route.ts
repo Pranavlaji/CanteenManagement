@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import Razorpay from "razorpay";
 import {
   verifyRequest,
   assertRateLimit,
   AuthError,
   adminDb,
+  getRazorpayCredentials,
+  isValidHexSignature,
 } from "@/lib/verify-auth";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest) {
     const user = await verifyRequest(req);
 
     // 2. Rate limit
-    assertRateLimit(user.uid, "verifyPayment", 6);
+    await assertRateLimit(user.uid, "verifyPayment", 6);
 
     // 3. Parse and validate payload
     const body = await req.json();
@@ -66,44 +69,33 @@ export async function POST(req: NextRequest) {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      items,
-      totalPaisa,
-      customerName,
     } = body;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    if (
+      typeof razorpay_order_id !== "string" ||
+      typeof razorpay_payment_id !== "string" ||
+      typeof razorpay_signature !== "string" ||
+      !razorpay_order_id ||
+      !razorpay_payment_id ||
+      !razorpay_signature
+    ) {
       return NextResponse.json(
         { error: "Missing required payment fields." },
         { status: 400 }
       );
     }
-
-    if (!Array.isArray(items) || items.length === 0) {
+    if (!isValidHexSignature(razorpay_signature)) {
       return NextResponse.json(
-        { error: "Missing order items." },
-        { status: 400 }
-      );
-    }
-
-    if (!totalPaisa || typeof totalPaisa !== "number" || totalPaisa < 100) {
-      return NextResponse.json(
-        { error: "Invalid order total." },
+        { error: "Invalid signature. Payment verification failed." },
         { status: 400 }
       );
     }
 
     // 4. Verify Razorpay signature — timing-safe comparison
-    const secret = process.env.RAZORPAY_KEY_SECRET || "";
-    if (!secret) {
-      console.error("RAZORPAY_KEY_SECRET is not configured.");
-      return NextResponse.json(
-        { error: "Payment configuration error." },
-        { status: 500 }
-      );
-    }
+    const credentials = getRazorpayCredentials();
 
     const expectedSignature = crypto
-      .createHmac("sha256", secret)
+      .createHmac("sha256", credentials.key_secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest("hex");
 
@@ -113,6 +105,82 @@ export async function POST(req: NextRequest) {
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       return NextResponse.json(
         { error: "Invalid signature. Payment verification failed." },
+        { status: 400 }
+      );
+    }
+
+    const attemptRef = adminDb.collection("paymentAttempts").doc(razorpay_order_id);
+    const attemptSnap = await attemptRef.get();
+    if (!attemptSnap.exists) {
+      return NextResponse.json(
+        { error: "Payment attempt not found." },
+        { status: 404 }
+      );
+    }
+
+    const attempt = attemptSnap.data() || {};
+    if (attempt.userId !== user.uid) {
+      return NextResponse.json(
+        { error: "Payment attempt does not belong to this user." },
+        { status: 403 }
+      );
+    }
+
+    if (attempt.status === "captured") {
+      const existing = await adminDb.collection("orders").doc(razorpay_order_id).get();
+      return NextResponse.json(
+        {
+          success: true,
+          order: { id: existing.id, ...existing.data() },
+          alreadyExists: true,
+        },
+        { status: 200 }
+      );
+    }
+
+    if (attempt.status !== "created") {
+      return NextResponse.json(
+        { error: "Payment attempt is not payable." },
+        { status: 400 }
+      );
+    }
+    const expiresAt = attempt.expiresAt;
+    if (expiresAt && typeof expiresAt.toDate === "function" && expiresAt.toDate().getTime() < Date.now()) {
+      return NextResponse.json(
+        { error: "Payment attempt expired. Please start checkout again." },
+        { status: 400 }
+      );
+    }
+
+    const items = attempt.items;
+    const totalPaisa = Number(attempt.amountPaisa || 0);
+    if (!Array.isArray(items) || items.length === 0 || totalPaisa < 100) {
+      return NextResponse.json(
+        { error: "Stored payment attempt is invalid." },
+        { status: 500 }
+      );
+    }
+
+    const razorpay = new Razorpay(credentials);
+    const payment = await razorpay.payments.fetch(razorpay_payment_id) as {
+      amount?: number;
+      currency?: string;
+      order_id?: string;
+      status?: string;
+    };
+    if (
+      payment.order_id !== razorpay_order_id ||
+      Number(payment.amount || 0) !== totalPaisa ||
+      payment.currency !== "INR" ||
+      payment.status !== "captured"
+    ) {
+      await attemptRef.set({
+        status: "verification_failed",
+        failureReason: "Razorpay payment details did not match the stored attempt.",
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return NextResponse.json(
+        { error: "Payment details did not match the order." },
         { status: 400 }
       );
     }
@@ -127,7 +195,7 @@ export async function POST(req: NextRequest) {
       id: orderId,
       token,
       userId: user.uid,
-      customerName: customerName || "Student",
+      customerName: user.email || "Student",
       items,
       totalPaisa,
       status: "placed",
@@ -143,6 +211,12 @@ export async function POST(req: NextRequest) {
 
     try {
       await orderRef.create(orderData);
+      await attemptRef.set({
+        status: "captured",
+        razorpayPaymentId: razorpay_payment_id,
+        capturedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
     } catch (err: unknown) {
       // Handle idempotency — if order already exists, return it
       const errStr = String(err);
@@ -184,8 +258,9 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("Verify payment error:", error);
-    const message =
-      error instanceof Error ? error.message : "Payment verification failed.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Payment verification failed. Please contact support if payment was debited." },
+      { status: 500 }
+    );
   }
 }

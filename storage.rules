@@ -2,16 +2,11 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Unified role detection: prioritize custom claims, fall back to email pattern.
-    // Matches the same logic used in firestore.rules and auth-provider.tsx.
     function role() {
       return request.auth == null ? "student" :
         (request.auth.token.role is string
           ? request.auth.token.role
-          : (request.auth.token.email.matches(".*@canteen\\.internal")
-              ? (request.auth.token.email.matches("^admin.*") ? "admin" : "staff")
-              : "student"
-            )
+          : "student"
         );
     }
 

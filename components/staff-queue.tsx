@@ -20,7 +20,7 @@ export function StaffQueue({
 }: {
   orders: Order[];
   menu: MenuItem[];
-  onTransition: (orderId: string, status: OrderStatus) => void;
+  onTransition: (orderId: string, status: OrderStatus) => void | Promise<void>;
   onToggleAvailability: (itemId: string) => void;
   viewedOrderIds: string[];
   onViewOrder: (orderId: string) => void;

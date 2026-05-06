@@ -1,6 +1,6 @@
 import { Order, OrderStatus } from "@/lib/types";
 import { db } from "@/lib/firebase";
-import { collection, doc, onSnapshot, query, setDoc, updateDoc, where, serverTimestamp, orderBy } from "firebase/firestore";
+import { collection, onSnapshot, query, where, orderBy, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 
 const ORDER_STORAGE_KEY = "canteen.demo.orders";
 
@@ -26,6 +26,34 @@ function writeLocalOrders(orders: Order[]) {
 
 // --- FIRESTORE REAL-TIME SYNCS ---
 
+function dateString(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  if (value && typeof value === "object" && "toDate" in value) {
+    const date = (value as { toDate: () => Date }).toDate();
+    return date.toISOString();
+  }
+  return new Date(0).toISOString();
+}
+
+function normalizeOrderDoc(doc: QueryDocumentSnapshot<DocumentData>): Order {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    token: Number(data.token || 0),
+    userId: String(data.userId || ""),
+    customerName: String(data.customerName || "Student"),
+    items: Array.isArray(data.items) ? data.items : [],
+    totalPaisa: Number(data.totalPaisa || 0),
+    status: data.status || "placed",
+    paymentStatus: data.paymentStatus || "captured",
+    razorpayOrderId: data.razorpayOrderId,
+    razorpayPaymentId: data.razorpayPaymentId,
+    createdAt: dateString(data.createdAt),
+    updatedAt: dateString(data.updatedAt),
+  };
+}
+
 export function subscribeToStaffOrders(callback: (orders: Order[]) => void) {
   if (!db) {
     // Fallback to local polling for demo
@@ -46,13 +74,7 @@ export function subscribeToStaffOrders(callback: (orders: Order[]) => void) {
   );
 
   return onSnapshot(q, (snapshot) => {
-    const orders: Order[] = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data() as Order;
-      // Filter out cancelled/completed older than 24h if needed, 
-      // but for now return all and let UI filter
-      orders.push(data);
-    });
+    const orders = snapshot.docs.map(normalizeOrderDoc);
     callback(orders);
   }, (error) => {
     console.error("Staff orders listener error:", error);
@@ -83,29 +105,10 @@ export function subscribeToStudentOrders(userId: string, callback: (orders: Orde
   );
 
   return onSnapshot(q, (snapshot) => {
-    const orders: Order[] = [];
-    snapshot.forEach((doc) => {
-      orders.push(doc.data() as Order);
-    });
+    const orders = snapshot.docs.map(normalizeOrderDoc);
     callback(orders);
   }, (error) => {
     console.error("Student orders listener error:", error);
-  });
-}
-
-// --- FIRESTORE WRITES ---
-
-export async function createOrderInStore(order: Order) {
-  if (!db) {
-    const current = readLocalOrders();
-    writeLocalOrders([order, ...current]);
-    return;
-  }
-
-  await setDoc(doc(db, "orders", order.id), {
-    ...order,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
   });
 }
 
@@ -118,9 +121,5 @@ export async function updateOrderStatusInStore(orderId: string, status: OrderSta
     writeLocalOrders(next);
     return;
   }
-
-  await updateDoc(doc(db, "orders", orderId), {
-    status,
-    updatedAt: serverTimestamp()
-  });
+  throw new Error("Order status updates must go through /api/orders/status.");
 }

@@ -1,19 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
-import { verifyRequest, assertRateLimit, AuthError, adminDb } from "@/lib/verify-auth";
+import {
+  verifyRequest,
+  assertRateLimit,
+  AuthError,
+  adminDb,
+  getRazorpayCredentials,
+} from "@/lib/verify-auth";
 import { seedMenu } from "@/lib/mock-data";
 import { MenuItem } from "@/lib/types";
+import { FieldValue } from "firebase-admin/firestore";
 
 async function getMenuItemForCheckout(itemId: string): Promise<MenuItem | null> {
   const snap = await adminDb.collection("menuItems").doc(itemId).get();
   if (snap.exists) {
     const data = snap.data() || {};
+    const pricePaisa = Number(data.pricePaisa || 0);
+    if (!Number.isSafeInteger(pricePaisa) || pricePaisa < 100) {
+      return null;
+    }
     return {
       id: snap.id,
       name: String(data.name || ""),
       description: String(data.description || ""),
       category: data.category === "meal" || data.category === "drink" ? data.category : "snack",
-      pricePaisa: Number(data.pricePaisa || 0),
+      pricePaisa,
       available: data.available !== false,
       imageUrl: data.imageUrl || undefined,
     };
@@ -33,7 +44,7 @@ export async function POST(req: NextRequest) {
     const user = await verifyRequest(req);
 
     // 2. Rate limit — 6 requests per minute per user
-    assertRateLimit(user.uid, "createOrder", 6);
+    await assertRateLimit(user.uid, "createOrder", 6);
 
     // 3. Parse and validate cart items
     const body = await req.json();
@@ -58,7 +69,12 @@ export async function POST(req: NextRequest) {
     for (const cartItem of items) {
       const { itemId, quantity } = cartItem;
 
-      if (!itemId || typeof itemId !== "string") {
+      if (
+        !itemId ||
+        typeof itemId !== "string" ||
+        itemId.length > 150 ||
+        itemId.includes("/")
+      ) {
         return NextResponse.json(
           { error: `Invalid item ID.` },
           { status: 400 }
@@ -89,6 +105,12 @@ export async function POST(req: NextRequest) {
       }
 
       totalPaisa += menuItem.pricePaisa * qty;
+      if (!Number.isSafeInteger(totalPaisa)) {
+        return NextResponse.json(
+          { error: "Invalid order total." },
+          { status: 400 }
+        );
+      }
       validatedItems.push({
         itemId: menuItem.id,
         name: menuItem.name,
@@ -105,10 +127,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Create Razorpay order with server-computed amount
-    const razorpay = new Razorpay({
-      key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
-      key_secret: process.env.RAZORPAY_KEY_SECRET || "",
-    });
+    const razorpay = new Razorpay(getRazorpayCredentials());
 
     const order = await razorpay.orders.create({
       amount: totalPaisa,
@@ -120,12 +139,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    await adminDb.collection("paymentAttempts").doc(order.id).set({
+      userId: user.uid,
+      razorpayOrderId: order.id,
+      amountPaisa: totalPaisa,
+      currency: "INR",
+      items: validatedItems,
+      status: "created",
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+    });
+
     return NextResponse.json(
       {
-        ...order,
-        // Pass validated items back so the client doesn't need to resend them
-        _validatedItems: validatedItems,
-        _totalPaisa: totalPaisa,
+        ...order
       },
       { status: 200 }
     );
@@ -137,8 +164,9 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("Create order error:", error);
-    const message =
-      error instanceof Error ? error.message : "Failed to create order.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create order. Please try again." },
+      { status: 500 }
+    );
   }
 }
