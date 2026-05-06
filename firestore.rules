@@ -6,16 +6,38 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function profileRoleById(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        ? get(/databases/$(database)/documents/users/$(userId)).data.get(
+            "role",
+            get(/databases/$(database)/documents/users/$(userId)).data.get("roleDisplay", "student")
+          )
+        : "student";
+    }
+
+    function profileRole() {
+      return profileRoleById(request.auth.uid) != "student"
+        ? profileRoleById(request.auth.uid)
+        : (
+          request.auth.token.get("email", "") != ""
+            ? profileRoleById(request.auth.token.get("email", ""))
+            : "student"
+        );
+    }
+
     // Unified role detection: prioritize custom claims, fall back to email pattern.
     // Matches the same logic used in storage.rules and auth-provider.tsx.
     function role() {
       return !signedIn() ? "student" :
         (request.auth.token.get("role", null) != null
           ? request.auth.token.get("role", "student")
-          : (request.auth.token.get("email", "").matches(".*@canteen\\.internal")
+          : (profileRole() != "student"
+            ? profileRole()
+            : (request.auth.token.get("email", "").matches(".*@canteen\\.internal")
               ? (request.auth.token.get("email", "").matches("^admin.*") ? "admin" : "staff")
               : "student"
             )
+          )
         );
     }
 
@@ -28,7 +50,12 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || staffOrAdmin());
+      allow read: if signedIn() && (
+        request.auth.uid == userId
+        || request.auth.token.get("email", "") == userId
+        || resource.data.get("email", "") == request.auth.token.get("email", "")
+        || staffOrAdmin()
+      );
       allow create: if signedIn() && request.auth.uid == userId
         && !("role" in request.resource.data);
       allow update: if signedIn() && request.auth.uid == userId

@@ -11,7 +11,7 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
 } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 type AuthContextValue = {
@@ -39,6 +39,10 @@ function roleFromEmail(email?: string | null): UserProfile["role"] | null {
 
 function parseRole(value: unknown): UserProfile["role"] | null {
   return value === "admin" || value === "staff" || value === "student" ? value : null;
+}
+
+function roleFromUserDoc(userDoc: { get: (fieldPath: string) => unknown }) {
+  return parseRole(userDoc.get("role")) || parseRole(userDoc.get("roleDisplay"));
 }
 
 function describeAuthError(error: unknown) {
@@ -99,6 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const token = await getIdTokenResult(user, true);
         let role = parseRole(token.claims.role) || roleFromEmail(user.email) || "student";
         const fallbackName = user.displayName?.trim() || "Student";
+        const normalizedEmail = user.email?.trim().toLowerCase() || "";
+        let hasStoredRole = false;
         let name = fallbackName;
 
         if (db) {
@@ -108,9 +114,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (storedName) {
               name = storedName;
             }
-            const storedRole = parseRole(userDoc.get("role"));
+            const storedRole = roleFromUserDoc(userDoc);
             if (storedRole) {
+              hasStoredRole = true;
               role = storedRole;
+            }
+          }
+
+          if (!hasStoredRole && normalizedEmail) {
+            const emailDoc = await getDoc(doc(db, "users", normalizedEmail));
+            if (emailDoc.exists()) {
+              const storedName = String(emailDoc.get("name") || "").trim();
+              const storedRole = roleFromUserDoc(emailDoc);
+              if (storedName) {
+                name = storedName;
+              }
+              if (storedRole) {
+                hasStoredRole = true;
+                role = storedRole;
+              }
+            }
+
+            if (!hasStoredRole) {
+              const emailQuery = query(
+                collection(db, "users"),
+                where("email", "==", normalizedEmail),
+                limit(1)
+              );
+              const emailMatches = await getDocs(emailQuery);
+              const matchedDoc = emailMatches.docs[0];
+              if (matchedDoc) {
+                const storedName = String(matchedDoc.get("name") || "").trim();
+                const storedRole = roleFromUserDoc(matchedDoc);
+                if (storedName) {
+                  name = storedName;
+                }
+                if (storedRole) {
+                  hasStoredRole = true;
+                  role = storedRole;
+                }
+              }
             }
           }
         }
