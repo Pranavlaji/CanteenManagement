@@ -1,15 +1,43 @@
-import { getApps, initializeApp } from "firebase-admin/app";
+import { cert, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import { NextRequest } from "next/server";
 
+function privateKeyFromEnv() {
+  const key = process.env.FIREBASE_PRIVATE_KEY;
+  if (!key) return "";
+  return key.replace(/\\n/g, "\n");
+}
+
+function serviceAccountCredential() {
+  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (serviceAccountJson) {
+    return cert(JSON.parse(serviceAccountJson));
+  }
+
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = privateKeyFromEnv();
+
+  if (!projectId || !clientEmail || !privateKey) {
+    return null;
+  }
+
+  return cert({
+    projectId,
+    clientEmail,
+    privateKey,
+  });
+}
+
 // Initialize Firebase Admin SDK (singleton)
 if (!getApps().length) {
-  // In production, use a service account key via GOOGLE_APPLICATION_CREDENTIALS
-  // or Vercel's automatic detection. For Firebase-hosted projects,
-  // initializeApp() with no args uses Application Default Credentials.
+  const credential = serviceAccountCredential();
+  const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
   initializeApp({
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    ...(credential ? { credential } : {}),
+    ...(projectId ? { projectId } : {}),
   });
 }
 
