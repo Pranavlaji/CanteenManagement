@@ -15,6 +15,7 @@ admin.initializeApp({
 async function main() {
   await admin.auth().setCustomUserClaims(uid, { role: "admin" });
   await admin.firestore().collection("users").doc(uid).set({
+    role: "admin",
     roleDisplay: "admin",
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge: true });

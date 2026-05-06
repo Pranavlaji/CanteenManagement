@@ -29,6 +29,18 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const AUTH_STORAGE_KEY = "canteen.demo.user";
 const googleProvider = new GoogleAuthProvider();
 
+function roleFromEmail(email?: string | null): UserProfile["role"] | null {
+  const normalizedEmail = email?.trim().toLowerCase() || "";
+  if (!normalizedEmail.endsWith("@canteen.internal")) {
+    return null;
+  }
+  return normalizedEmail.startsWith("admin") ? "admin" : "staff";
+}
+
+function parseRole(value: unknown): UserProfile["role"] | null {
+  return value === "admin" || value === "staff" || value === "student" ? value : null;
+}
+
 function describeAuthError(error: unknown) {
   if (!error || typeof error !== "object" || !("code" in error)) {
     return error instanceof Error ? error.message : "Something went wrong. Please try again.";
@@ -85,14 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const token = await getIdTokenResult(user, true);
-        let role = token.claims.role as UserProfile["role"] | undefined;
-        if (!role) {
-          if (user.email?.endsWith("@canteen.internal")) {
-            role = user.email.startsWith("admin") ? "admin" : "staff";
-          } else {
-            role = "student";
-          }
-        }
+        let role = parseRole(token.claims.role) || roleFromEmail(user.email) || "student";
         const fallbackName = user.displayName?.trim() || "Student";
         let name = fallbackName;
 
@@ -103,8 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (storedName) {
               name = storedName;
             }
-            const storedRole = userDoc.get("role");
-            if (storedRole === "admin" || storedRole === "staff" || storedRole === "student") {
+            const storedRole = parseRole(userDoc.get("role"));
+            if (storedRole) {
               role = storedRole;
             }
           }
@@ -119,11 +124,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } catch (err) {
         console.error("Failed to fetch full profile. Using fallback.", err);
-        let fallbackRole: UserProfile["role"] = "student";
-        if (user.email?.endsWith("@canteen.internal")) {
-          fallbackRole = user.email.startsWith("admin") ? "admin" : "staff";
-        }
-        
+        const fallbackRole = roleFromEmail(user.email) || "student";
+
         // Still sign them in with basic info from Firebase Auth even if
         // Firestore or token enrichment fails
         setUserProfile({

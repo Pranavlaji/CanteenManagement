@@ -85,6 +85,7 @@ export const assignRole = onCall(async (request) => {
   const { uid, role } = schema.parse(request.data);
   await getAuth().setCustomUserClaims(uid, { role });
   await db.collection("users").doc(uid).set({
+    role,
     roleDisplay: role,
     updatedAt: FieldValue.serverTimestamp()
   }, { merge: true });

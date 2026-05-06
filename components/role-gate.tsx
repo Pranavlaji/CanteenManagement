@@ -3,8 +3,7 @@
 import { AuthPanel } from "@/components/auth-panel";
 import { useAuth } from "@/components/auth-provider";
 import { Role } from "@/lib/types";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { LogOut } from "lucide-react";
 
 export function RoleGate({
   role,
@@ -17,22 +16,10 @@ export function RoleGate({
   description: string;
   children: React.ReactNode;
 }) {
-  const { authReady, userProfile } = useAuth();
-  const router = useRouter();
-  const isAllowed = userProfile?.role === role;
-  const isBlockedByOtherRole = Boolean(userProfile && userProfile.role !== role);
-  const [showAccessDenied, setShowAccessDenied] = useState(false);
-
-  // Show access denied message and redirect — don't sign out the user
-  useEffect(() => {
-    if (isBlockedByOtherRole) {
-      setShowAccessDenied(true);
-      const timer = setTimeout(() => {
-        router.push("/");
-      }, 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [isBlockedByOtherRole, router]);
+  const { authReady, userProfile, signOut } = useAuth();
+  const allowedRoles = role === "staff" ? ["staff", "admin"] : [role];
+  const isAllowed = userProfile ? allowedRoles.includes(userProfile.role) : false;
+  const isBlockedByOtherRole = Boolean(userProfile && !isAllowed);
 
   if (!authReady) {
     return (
@@ -42,47 +29,21 @@ export function RoleGate({
     );
   }
 
-  if (showAccessDenied) {
+  if (isBlockedByOtherRole) {
     return (
       <main className="access-screen">
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            minHeight: "100vh",
-            padding: "2rem",
-            textAlign: "center",
-            fontFamily: "system-ui, -apple-system, sans-serif",
-            color: "#e2e8f0",
-          }}
-        >
-          <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>🚫</div>
-          <h1
-            style={{
-              fontSize: "1.5rem",
-              fontWeight: 700,
-              marginBottom: "0.5rem",
-              color: "#f8fafc",
-            }}
-          >
+        <div className="access-denied-card">
+          <h1>
             Access Denied
           </h1>
-          <p
-            style={{
-              fontSize: "0.95rem",
-              color: "#94a3b8",
-              marginBottom: "0.5rem",
-              maxWidth: "400px",
-            }}
-          >
+          <p>
             This page requires <strong>{role}</strong> access. You are signed in
             as <strong>{userProfile?.role || "student"}</strong>.
           </p>
-          <p style={{ fontSize: "0.85rem", color: "#64748b" }}>
-            Redirecting to home page…
-          </p>
+          <button className="primary-button" onClick={signOut} type="button">
+            <LogOut size={18} />
+            Sign out
+          </button>
         </div>
       </main>
     );
@@ -95,10 +56,10 @@ export function RoleGate({
   return (
     <main className="access-screen">
       <AuthPanel
-        mode="google"
+        mode="credentials"
         demoRole={role}
         title={`Sign in for ${role} access`}
-        description={`Use your Google account to sign in for ${role} access.`}
+        description={`Use your ${role} email and password to continue.`}
       />
     </main>
   );
