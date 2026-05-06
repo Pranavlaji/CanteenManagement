@@ -31,6 +31,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const availableIds = new Set(menu.filter((item) => item.available).map((item) => item.id));
+    setCart((current) => current.filter((cartItem) => availableIds.has(cartItem.item.id)));
+  }, [menu]);
+
+  useEffect(() => {
     if (!userProfile) {
       setOrders([]);
       return;

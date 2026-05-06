@@ -3,7 +3,7 @@
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { AppShell } from "@/components/app-shell";
 import { RoleGate } from "@/components/role-gate";
-import { addMenuItem, subscribeToMenu, toggleMenuItemAvailability, updateMenuItemPrice } from "@/lib/menu-store";
+import { addMenuItem, removeMenuItem, subscribeToMenu, updateMenuItemPrice } from "@/lib/menu-store";
 import { subscribeToStaffOrders } from "@/lib/order-store";
 import { MenuItem } from "@/lib/types";
 import { LayoutDashboard } from "lucide-react";
@@ -31,27 +31,31 @@ export default function AdminPage() {
     };
   }, []);
 
-  function toggleAvailability(itemId: string) {
-    // Optimistic update
-    setMenu((current) =>
-      current.map((item) =>
-        item.id === itemId ? { ...item, available: !item.available } : item
-      )
-    );
-    // Persist to Firestore
-    const item = menu.find((m) => m.id === itemId);
-    if (item) {
-      toggleMenuItemAvailability(itemId, !item.available).catch(console.error);
-    }
-  }
-
   async function updatePrice(itemId: string, pricePaisa: number) {
+    const previousMenu = menu;
     setMenu((current) => current.map((item) => item.id === itemId ? { ...item, pricePaisa } : item));
-    await updateMenuItemPrice(itemId, pricePaisa).catch(console.error);
+    await updateMenuItemPrice(itemId, pricePaisa).catch((error) => {
+      console.error("Failed to update item price:", error);
+      setMenu(previousMenu);
+      window.alert("Could not update the price. Check Firestore rules and your admin role.");
+    });
   }
 
   async function addDish(item: Omit<MenuItem, "id">) {
-    await addMenuItem(item).catch(console.error);
+    await addMenuItem(item).catch((error) => {
+      console.error("Failed to add menu item:", error);
+      window.alert("Could not add the item. Check Firestore rules and your admin role.");
+    });
+  }
+
+  async function removeDish(itemId: string) {
+    const previousMenu = menu;
+    setMenu((current) => current.filter((item) => item.id !== itemId));
+    await removeMenuItem(itemId).catch((error) => {
+      console.error("Failed to remove menu item:", error);
+      setMenu(previousMenu);
+      window.alert("Could not remove the item. Check Firestore rules and your admin role.");
+    });
   }
 
   return (
@@ -69,9 +73,9 @@ export default function AdminPage() {
         <AdminDashboard 
           orders={orders} 
           menu={menu} 
-          onToggleAvailability={toggleAvailability}
           onUpdatePrice={updatePrice}
           onAddDish={addDish}
+          onRemoveDish={removeDish}
         />
       </AppShell>
     </RoleGate>

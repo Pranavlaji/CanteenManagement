@@ -45,17 +45,26 @@ export default function StaffPage() {
   }
 
   function toggleAvailability(itemId: string) {
+    const item = menu.find((m) => m.id === itemId);
+    if (!item) return;
+
+    const nextAvailable = !item.available;
     // Optimistic update
     setMenu((current) =>
       current.map((item) =>
-        item.id === itemId ? { ...item, available: !item.available } : item
+        item.id === itemId ? { ...item, available: nextAvailable } : item
       )
     );
     // Persist to Firestore
-    const item = menu.find((m) => m.id === itemId);
-    if (item) {
-      toggleMenuItemAvailability(itemId, !item.available).catch(console.error);
-    }
+    toggleMenuItemAvailability(itemId, nextAvailable).catch((error) => {
+      console.error("Failed to update item availability:", error);
+      setMenu((current) =>
+        current.map((item) =>
+          item.id === itemId ? { ...item, available: !nextAvailable } : item
+        )
+      );
+      window.alert("Could not update item availability. Check Firestore rules and your staff role.");
+    });
   }
 
   function markOrderViewed(orderId: string) {

@@ -1,6 +1,6 @@
 import { MenuItem } from "@/lib/types";
 import { db } from "@/lib/firebase";
-import { addDoc, collection, doc, onSnapshot, updateDoc } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { seedMenu } from "@/lib/mock-data";
 
 /**
@@ -32,7 +32,7 @@ export function subscribeToMenu(callback: (items: MenuItem[]) => void) {
           description: String(data.description || ""),
           category: data.category || "snack",
           pricePaisa: Number(data.pricePaisa || 0),
-          available: Boolean(data.available),
+          available: data.available !== false,
           imageUrl: data.imageUrl || undefined,
         });
       });
@@ -71,4 +71,9 @@ export async function addMenuItem(
 ) {
   if (!db) return;
   await addDoc(collection(db, "menuItems"), item);
+}
+
+export async function removeMenuItem(itemId: string) {
+  if (!db) return;
+  await deleteDoc(doc(db, "menuItems", itemId));
 }

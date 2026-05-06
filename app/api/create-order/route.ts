@@ -1,7 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
-import { verifyRequest, assertRateLimit, AuthError } from "@/lib/verify-auth";
+import { verifyRequest, assertRateLimit, AuthError, adminDb } from "@/lib/verify-auth";
 import { seedMenu } from "@/lib/mock-data";
+import { MenuItem } from "@/lib/types";
+
+async function getMenuItemForCheckout(itemId: string): Promise<MenuItem | null> {
+  const snap = await adminDb.collection("menuItems").doc(itemId).get();
+  if (snap.exists) {
+    const data = snap.data() || {};
+    return {
+      id: snap.id,
+      name: String(data.name || ""),
+      description: String(data.description || ""),
+      category: data.category === "meal" || data.category === "drink" ? data.category : "snack",
+      pricePaisa: Number(data.pricePaisa || 0),
+      available: data.available !== false,
+      imageUrl: data.imageUrl || undefined,
+    };
+  }
+
+  const menuSnapshot = await adminDb.collection("menuItems").limit(1).get();
+  if (menuSnapshot.empty) {
+    return seedMenu.find((item) => item.id === itemId) || null;
+  }
+
+  return null;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -49,8 +73,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Look up item from the canonical menu (server-side source of truth)
-      const menuItem = seedMenu.find((m) => m.id === itemId);
+      // Look up item from Firestore, the production menu source of truth.
+      const menuItem = await getMenuItemForCheckout(itemId);
       if (!menuItem) {
         return NextResponse.json(
           { error: `Item "${itemId}" not found on menu.` },

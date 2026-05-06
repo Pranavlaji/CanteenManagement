@@ -24,6 +24,7 @@ export function MenuGrid({
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
   const visible = items.filter((item) => {
+    if (!item.available) return false;
     const categoryMatch = category === "all" || item.category === category;
     const searchMatch =
       normalizedQuery.length === 0 ||

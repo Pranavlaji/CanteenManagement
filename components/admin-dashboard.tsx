@@ -2,22 +2,22 @@
 
 import { money } from "@/lib/format";
 import { MenuItem, Order } from "@/lib/types";
-import { BarChart3, IndianRupee, ReceiptText, UsersRound, type LucideIcon } from "lucide-react";
+import { BarChart3, IndianRupee, ReceiptText, Trash2, UsersRound, type LucideIcon } from "lucide-react";
 
 import { useState } from "react";
 
 export function AdminDashboard({
   orders,
   menu,
-  onToggleAvailability,
   onUpdatePrice,
-  onAddDish
+  onAddDish,
+  onRemoveDish
 }: {
   orders: Order[];
   menu: MenuItem[];
-  onToggleAvailability: (itemId: string) => void;
   onUpdatePrice: (itemId: string, pricePaisa: number) => void;
   onAddDish: (item: Omit<MenuItem, "id">) => void;
+  onRemoveDish: (itemId: string) => void;
 }) {
   const completed = orders.filter((order) => order.status === "completed");
   const revenue = completed.reduce((sum, order) => sum + order.totalPaisa, 0);
@@ -67,8 +67,17 @@ export function AdminDashboard({
                 >
                   Edit Price
                 </button>
-                <button onClick={() => onToggleAvailability(item.id)} type="button">
-                  {item.available ? "Mark sold out" : "Make available"}
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Remove ${item.name} from the menu?`)) {
+                      onRemoveDish(item.id);
+                    }
+                  }}
+                  type="button"
+                  style={{ background: "#fff0ed", color: "#b42318" }}
+                >
+                  <Trash2 size={16} />
+                  Remove
                 </button>
               </div>
             </div>
