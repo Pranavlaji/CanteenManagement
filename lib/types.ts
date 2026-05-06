@@ -15,7 +15,7 @@ export type CartItem = {
   quantity: number;
 };
 
-export type OrderStatus = "placed" | "preparing" | "ready" | "completed" | "cancelled";
+export type OrderStatus = "placed" | "preparing" | "almost_ready" | "ready" | "completed" | "cancelled";
 
 export type Order = {
   id: string;

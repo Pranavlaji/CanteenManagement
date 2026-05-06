@@ -2,23 +2,29 @@
 
 import { RoleGate } from "@/components/role-gate";
 import { StaffQueue } from "@/components/staff-queue";
-import { seedMenu, seedOrders } from "@/lib/mock-data";
+import { subscribeToMenu, toggleMenuItemAvailability } from "@/lib/menu-store";
 import { subscribeToStaffOrders, updateOrderStatusInStore } from "@/lib/order-store";
-import { OrderStatus } from "@/lib/types";
+import { MenuItem, OrderStatus } from "@/lib/types";
 import { useEffect, useState } from "react";
 
 const VIEWED_ORDERS_KEY = "canteen.demo.viewedKitchenOrders";
 
 export default function StaffPage() {
-  const [orders, setOrders] = useState(seedOrders);
-  const [menu, setMenu] = useState(seedMenu);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
   const [viewedOrderIds, setViewedOrderIds] = useState<string[]>([]);
+
+  // Subscribe to real-time menu from Firestore
+  useEffect(() => {
+    const unsubscribe = subscribeToMenu((items) => {
+      setMenu(items);
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     setViewedOrderIds(readViewedOrders());
     const unsubscribe = subscribeToStaffOrders((fetchedOrders) => {
-      // In demo mode with empty local storage, we might still want to show seedOrders
-      // if it's completely empty, but let's just use what's returned.
       setOrders(fetchedOrders);
     });
 
@@ -39,11 +45,17 @@ export default function StaffPage() {
   }
 
   function toggleAvailability(itemId: string) {
+    // Optimistic update
     setMenu((current) =>
       current.map((item) =>
         item.id === itemId ? { ...item, available: !item.available } : item
       )
     );
+    // Persist to Firestore
+    const item = menu.find((m) => m.id === itemId);
+    if (item) {
+      toggleMenuItemAvailability(itemId, !item.available).catch(console.error);
+    }
   }
 
   function markOrderViewed(orderId: string) {

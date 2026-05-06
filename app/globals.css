@@ -1,3 +1,5 @@
+@import url('https://api.fontshare.com/v2/css?f[]=satoshi@900,700,500,300,400&display=swap');
+
 :root {
   --bg: #ffffff;
   --surface: #ffffff;
@@ -209,8 +211,10 @@ p {
 }
 
 .student-hero {
-  height: 149px;
-  margin: 0 12px;
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin: 0 12px 16px;
   padding-top: 0;
   position: relative;
 }
@@ -229,12 +233,6 @@ p {
   line-height: 31px;
 }
 
-.student-hero > div:first-child {
-  left: 0;
-  position: absolute;
-  top: 62px;
-}
-
 .student-avatar {
   background: #d9d9d9;
   border-radius: 999px;
@@ -250,11 +248,9 @@ p {
   background: transparent;
   border: 0;
   display: flex;
-  gap: 16px;
+  flex-shrink: 0;
+  gap: 12px;
   padding: 0;
-  position: absolute;
-  right: 0;
-  top: 14px;
 }
 
 .student-token {
@@ -270,6 +266,10 @@ p {
   justify-content: center;
   line-height: 1;
   width: 56px;
+}
+
+.student-token.almost_ready {
+  border-color: #907113;
 }
 
 .student-token.ready {
@@ -369,6 +369,7 @@ input {
 .google-sign-in-button {
   align-items: center;
   background: white;
+  margin-top: 24px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   color: var(--ink);
@@ -566,6 +567,7 @@ input {
 }
 
 .menu-card-title h3 {
+  color: var(--ink);
   font-size: 16px;
   font-weight: 800;
   line-height: 18px;
@@ -847,21 +849,52 @@ input {
 }
 
 .kitchen-card.new {
-  border-color: #1ac05e;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
-.kitchen-card.ready {
+/* 1. Placed (Verify order) - Grey */
+.kitchen-card.status-placed {
+  border: 1px solid var(--line);
+}
+.kitchen-card.status-placed .kitchen-token,
+.kitchen-card.status-placed .kitchen-done-button {
+  background: #6c6c6c;
+  color: white;
+}
+
+/* 2. Preparing (Almost Ready) - Mustard */
+.kitchen-card.status-preparing {
+  border: 2px solid rgba(144, 113, 19, 0.3);
+}
+.kitchen-card.status-preparing .kitchen-token,
+.kitchen-card.status-preparing .kitchen-done-button {
+  background: #907113;
+  color: white;
+}
+
+/* 3. Almost Ready (Mark As done) - Green */
+.kitchen-card.status-almost_ready {
+  border: 2px solid rgba(17, 140, 61, 0.3);
+}
+.kitchen-card.status-almost_ready .kitchen-token,
+.kitchen-card.status-almost_ready .kitchen-done-button {
+  background: #188f43;
+  color: white;
+}
+
+/* 4. Ready (Complete pickup) - Final state */
+.kitchen-card.status-ready {
   background: #a8f6c7;
+  border-color: #118c3d;
 }
-
-.kitchen-card.ready .kitchen-token,
-.kitchen-card.ready .kitchen-done-button {
-  background: #118c3d;
+.kitchen-card.status-ready .kitchen-token,
+.kitchen-card.status-ready .kitchen-done-button {
+  background: #0d5d1d;
+  color: white;
 }
 
 .kitchen-token {
   align-items: center;
-  background: #017cf7;
   color: white;
   display: flex;
   font-size: 16px;
@@ -889,7 +922,6 @@ input {
 .kitchen-done-button {
   align-items: center;
   align-self: end;
-  background: #0d5d1d;
   border: 0;
   border-radius: 31px;
   color: white;
@@ -1280,6 +1312,12 @@ input {
   overflow: hidden;
 }
 
+.token-screen.almost_ready {
+  --token-accent: #907113;
+  --token-soft: #e2dac0;
+  --token-ring: #907113;
+}
+
 .token-screen.ready {
   --token-accent: #118c3d;
   --token-soft: #a8f6c7;
@@ -1378,9 +1416,15 @@ input {
   font-weight: 800;
   justify-content: center;
   line-height: 24px;
+  margin-top: 24px;
   min-height: 38px;
   min-width: 98px;
   padding: 0 14px;
+}
+
+.token-status-card.almost_ready > span {
+  background: white;
+  color: #907113;
 }
 
 .token-status-card.ready > span {
@@ -1579,7 +1623,7 @@ input {
   border-radius: 24px 24px 0 0;
   box-shadow: 0 -8px 40px rgb(0 0 0 / 12%);
   max-width: 420px;
-  padding: 28px 22px 34px;
+  padding: 36px 28px 40px;
   position: relative;
   width: 100%;
   animation: auth-slide-up 280ms cubic-bezier(0.22, 0.61, 0.36, 1);

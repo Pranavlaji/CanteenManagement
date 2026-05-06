@@ -34,7 +34,6 @@ export function AppShell<T extends string>({
         </div>
         <div className="brand-copy">
           <p className="eyebrow">College canteen</p>
-          <h2>CanteenOS</h2>
         </div>
         <nav className="tabs" aria-label="Main navigation">
           {tabs.map((tab) => {

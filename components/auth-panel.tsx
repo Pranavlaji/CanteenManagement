@@ -46,7 +46,6 @@ export function AuthPanel({
   return (
     <div className="panel">
       <div className="panel-title">
-        <ShieldCheck size={20} />
         <h3>{title}</h3>
       </div>
       <p className="muted">{description}</p>

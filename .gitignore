@@ -8,3 +8,4 @@ dist
 coverage
 firebase-debug.log
 firestore-debug.log
+service-account.json

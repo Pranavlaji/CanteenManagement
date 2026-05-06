@@ -18,9 +18,14 @@ export function OrderTracker({
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   const hasReadyOrder = visibleOrders.some((order) => order.status === "ready");
+  const hasAlmostReadyOrder = visibleOrders.some((order) => order.status === "almost_ready");
+
+  let screenClass = "token-screen";
+  if (hasReadyOrder) screenClass += " ready";
+  else if (hasAlmostReadyOrder) screenClass += " almost_ready";
 
   return (
-    <main className={`token-screen ${hasReadyOrder ? "ready" : ""}`}>
+    <main className={screenClass}>
       <header className="token-screen-hero">
         <button className="token-screen-close" onClick={onClose} type="button" aria-label="Close token screen">
           <X size={30} />
@@ -34,12 +39,18 @@ export function OrderTracker({
         <section className="token-card-list" aria-label="Active order tokens">
           {visibleOrders.map((order) => {
             const isReady = order.status === "ready";
+            const isAlmostReady = order.status === "almost_ready";
+            
+            let cardClass = "token-status-card";
+            if (isReady) cardClass += " ready";
+            else if (isAlmostReady) cardClass += " almost_ready";
+
             return (
-              <article className={`token-status-card ${isReady ? "ready" : ""}`} key={order.id}>
+              <article className={cardClass} key={order.id}>
                 <div className="token-number-ring">
                   <strong>{order.token}</strong>
                 </div>
-                <span>{isReady ? "Cooked" : "Cooking"}</span>
+                <span>{isReady ? "Cooked" : isAlmostReady ? "Almost Ready" : "Cooking"}</span>
               </article>
             );
           })}

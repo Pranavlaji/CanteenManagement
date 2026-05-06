@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/components/auth-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 export const metadata: Metadata = {
   title: "Canteen",
@@ -13,7 +14,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>{children}</AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

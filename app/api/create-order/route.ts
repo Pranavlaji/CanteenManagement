@@ -1,40 +1,120 @@
 import { NextRequest, NextResponse } from "next/server";
 import Razorpay from "razorpay";
+import { verifyRequest, assertRateLimit, AuthError } from "@/lib/verify-auth";
+import { seedMenu } from "@/lib/mock-data";
 
 export async function POST(req: NextRequest) {
   try {
-    console.log("Loading Razorpay Keys:", {
-      id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ? "PRESENT" : "MISSING",
-      secret: process.env.RAZORPAY_KEY_SECRET ? "PRESENT" : "MISSING"
-    });
+    // 1. Authenticate — reject if no valid Firebase ID token
+    const user = await verifyRequest(req);
 
+    // 2. Rate limit — 6 requests per minute per user
+    assertRateLimit(user.uid, "createOrder", 6);
+
+    // 3. Parse and validate cart items
+    const body = await req.json();
+    const { items } = body;
+
+    if (!Array.isArray(items) || items.length === 0 || items.length > 10) {
+      return NextResponse.json(
+        { error: "Invalid cart. Must have 1-10 items." },
+        { status: 400 }
+      );
+    }
+
+    // 4. Server-side price computation — never trust client amounts
+    let totalPaisa = 0;
+    const validatedItems: Array<{
+      itemId: string;
+      name: string;
+      pricePaisa: number;
+      quantity: number;
+    }> = [];
+
+    for (const cartItem of items) {
+      const { itemId, quantity } = cartItem;
+
+      if (!itemId || typeof itemId !== "string") {
+        return NextResponse.json(
+          { error: `Invalid item ID.` },
+          { status: 400 }
+        );
+      }
+
+      const qty = Number(quantity);
+      if (!Number.isInteger(qty) || qty < 1 || qty > 5) {
+        return NextResponse.json(
+          { error: `Invalid quantity for ${itemId}. Must be 1-5.` },
+          { status: 400 }
+        );
+      }
+
+      // Look up item from the canonical menu (server-side source of truth)
+      const menuItem = seedMenu.find((m) => m.id === itemId);
+      if (!menuItem) {
+        return NextResponse.json(
+          { error: `Item "${itemId}" not found on menu.` },
+          { status: 400 }
+        );
+      }
+      if (!menuItem.available) {
+        return NextResponse.json(
+          { error: `"${menuItem.name}" is currently unavailable.` },
+          { status: 400 }
+        );
+      }
+
+      totalPaisa += menuItem.pricePaisa * qty;
+      validatedItems.push({
+        itemId: menuItem.id,
+        name: menuItem.name,
+        pricePaisa: menuItem.pricePaisa,
+        quantity: qty,
+      });
+    }
+
+    if (totalPaisa < 100) {
+      return NextResponse.json(
+        { error: "Order total must be at least ₹1 (100 paise)." },
+        { status: 400 }
+      );
+    }
+
+    // 5. Create Razorpay order with server-computed amount
     const razorpay = new Razorpay({
       key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
       key_secret: process.env.RAZORPAY_KEY_SECRET || "",
     });
 
-    const body = await req.json();
-    const { amount, receipt } = body;
-
-    if (!amount || amount < 100) {
-      return NextResponse.json(
-        { error: "Invalid amount. Minimum amount is 1 INR (100 paise)." },
-        { status: 400 }
-      );
-    }
-
     const order = await razorpay.orders.create({
-      amount,
+      amount: totalPaisa,
       currency: "INR",
-      receipt: receipt || `rcpt_${Date.now()}`,
+      receipt: `rcpt_${user.uid.slice(0, 8)}_${Date.now()}`,
+      notes: {
+        userId: user.uid,
+        itemCount: String(validatedItems.length),
+      },
     });
 
-    return NextResponse.json(order, { status: 200 });
-  } catch (error: any) {
-    console.error("Razorpay Create Order Error:", error);
     return NextResponse.json(
-      { error: error?.error?.description || error.message || "Failed to create Razorpay order." },
-      { status: 500 }
+      {
+        ...order,
+        // Pass validated items back so the client doesn't need to resend them
+        _validatedItems: validatedItems,
+        _totalPaisa: totalPaisa,
+      },
+      { status: 200 }
     );
+  } catch (error: unknown) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: error.status }
+      );
+    }
+    console.error("Create order error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to create order.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

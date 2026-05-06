@@ -65,6 +65,17 @@ async function assertRateLimit(uid: string, key: string, maxPerMinute: number) {
   });
 }
 
+/**
+ * Timing-safe comparison of two hex-encoded HMAC signatures.
+ * Prevents timing attacks that could leak signature bytes.
+ */
+function timingSafeHexEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "hex");
+  const bufB = Buffer.from(b, "hex");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export const assignRole = onCall(async (request) => {
   requireRole(request, ["admin"]);
   const schema = z.object({
@@ -87,7 +98,7 @@ export const initiatePayment = onCall(async (request) => {
 
   const active = await db.collection("orders")
     .where("userId", "==", auth.uid)
-    .where("status", "in", ["placed", "preparing", "ready"])
+    .where("status", "in", ["placed", "preparing", "almost_ready", "ready"])
     .limit(1)
     .get();
   if (!active.empty) {
@@ -128,7 +139,9 @@ export const verifyPayment = onCall(async (request) => {
     .createHmac("sha256", secret)
     .update(`${payload.razorpay_order_id}|${payload.razorpay_payment_id}`)
     .digest("hex");
-  if (expected !== payload.razorpay_signature) {
+
+  // Timing-safe comparison to prevent signature byte leakage
+  if (!timingSafeHexEqual(expected, payload.razorpay_signature)) {
     throw new HttpsError("permission-denied", "Payment verification failed.");
   }
 
@@ -144,23 +157,103 @@ export const razorpayWebhook = onRequest(async (request, response) => {
   }
   const body = JSON.stringify(request.body);
   const expected = crypto.createHmac("sha256", secret).update(body).digest("hex");
-  if (expected !== signature) {
+
+  // Timing-safe comparison
+  if (!timingSafeHexEqual(expected, signature)) {
     response.status(401).send("Unauthorized");
     return;
   }
-  // TODO: Handle payment.captured/refund events with createConfirmedOrder.
+
+  // Process webhook events
+  const event = request.body?.event;
+  const payload = request.body?.payload;
+
+  if (event === "payment.captured" && payload?.payment?.entity) {
+    const payment = payload.payment.entity;
+    const razorpayOrderId = payment.order_id;
+    const paymentId = payment.id;
+
+    if (razorpayOrderId && paymentId) {
+      try {
+        // Look up the payment attempt to get the userId
+        const attemptSnap = await db.collection("paymentAttempts").doc(razorpayOrderId).get();
+        if (attemptSnap.exists) {
+          const userId = attemptSnap.get("userId");
+          if (userId) {
+            await createConfirmedOrder(razorpayOrderId, userId, paymentId);
+          }
+        }
+      } catch (err) {
+        console.error("Webhook: failed to create order for captured payment:", err);
+      }
+    }
+  } else if (event === "payment.failed") {
+    const payment = payload?.payment?.entity;
+    if (payment?.order_id) {
+      // Mark payment attempt as failed
+      await db.collection("paymentAttempts").doc(payment.order_id).update({
+        status: "failed",
+        failureReason: payment.error_description || "Unknown",
+        updatedAt: FieldValue.serverTimestamp()
+      }).catch(() => {
+        // Attempt doc might not exist — that's fine
+      });
+    }
+  }
+
   response.json({ ok: true });
 });
+
+/**
+ * Generate the next sequential token number for the day.
+ */
+async function nextTokenNumber(): Promise<number> {
+  const counterRef = db.collection("counters").doc("daily");
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(counterRef);
+    const today = istDate();
+    let lastToken = 0;
+    if (snap.exists && snap.get("date") === today) {
+      lastToken = Number(snap.get("lastToken") || 0);
+    }
+    const nextToken = lastToken + 1;
+    tx.set(counterRef, {
+      date: today,
+      lastToken: nextToken,
+      updatedAt: FieldValue.serverTimestamp()
+    }, { merge: true });
+    return nextToken;
+  });
+}
 
 async function createConfirmedOrder(razorpayOrderId: string, uid: string, paymentId: string) {
   const orderRef = db.collection("orders").doc(razorpayOrderId);
   try {
+    // Look up payment attempt to get items and computed total
+    const attemptSnap = await db.collection("paymentAttempts").doc(razorpayOrderId).get();
+    const attemptData = attemptSnap.exists ? attemptSnap.data() : null;
+
+    // Generate sequential token number
+    const token = await nextTokenNumber();
+
+    // Fetch user name
+    const userSnap = await db.collection("users").doc(uid).get();
+    const customerName = userSnap.exists
+      ? String(userSnap.get("name") || "Student")
+      : "Student";
+
     await orderRef.create({
-      orderId: razorpayOrderId,
+      id: razorpayOrderId,
+      token,
       userId: uid,
+      customerName,
+      items: attemptData?.items || [],
+      totalPaisa: attemptData?.totalPaisa || 0,
       paymentId,
       status: "placed",
       paymentStatus: "captured",
+      razorpayOrderId,
+      razorpayPaymentId: paymentId,
       businessDate: istDate(),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp()
@@ -206,7 +299,7 @@ export const updateOrderStatus = onCall(async (request) => {
   const auth = requireRole(request, ["staff", "admin"]);
   const schema = z.object({
     orderId: z.string().min(1),
-    status: z.enum(["preparing", "ready", "completed"])
+    status: z.enum(["preparing", "almost_ready", "ready", "completed"])
   });
   const { orderId, status } = schema.parse(request.data);
   await db.collection("orders").doc(orderId).update({

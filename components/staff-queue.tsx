@@ -5,7 +5,8 @@ import { CheckCheck } from "lucide-react";
 
 const actionCopy: Partial<Record<OrderStatus, { label: string; next: OrderStatus }>> = {
   placed: { label: "Verify order", next: "preparing" },
-  preparing: { label: "Ready", next: "ready" },
+  preparing: { label: "Almost Ready", next: "almost_ready" },
+  almost_ready: { label: "Mark As done", next: "ready" },
   ready: { label: "Complete pickup", next: "completed" }
 };
 
@@ -24,7 +25,7 @@ export function StaffQueue({
   viewedOrderIds: string[];
   onViewOrder: (orderId: string) => void;
 }) {
-  const active = orders.filter((order) => ["placed", "preparing", "ready"].includes(order.status));
+  const active = orders.filter((order) => ["placed", "preparing", "almost_ready", "ready"].includes(order.status));
   const viewed = new Set(viewedOrderIds);
 
   return (
@@ -44,8 +45,9 @@ export function StaffQueue({
             return (
               <article
                 className={[
-                  isUnviewed ? "kitchen-card new" : "kitchen-card",
-                  order.status === "ready" ? "ready" : ""
+                  "kitchen-card",
+                  isUnviewed ? "new" : "",
+                  `status-${order.status}`
                 ].filter(Boolean).join(" ")}
                 key={order.id}
                 onClick={() => onViewOrder(order.id)}

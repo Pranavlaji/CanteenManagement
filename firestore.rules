@@ -6,12 +6,16 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Unified role detection: prioritize custom claims, fall back to email pattern.
+    // Matches the same logic used in storage.rules and auth-provider.tsx.
     function role() {
       return !signedIn() ? "student" :
-        request.auth.token.get("role", 
-          request.auth.token.get("email", "").matches(".*@canteen\\.internal") ? 
-            (request.auth.token.get("email", "").matches("^admin.*") ? "admin" : "staff") 
-          : "student"
+        (request.auth.token.get("role", null) != null
+          ? request.auth.token.get("role", "student")
+          : (request.auth.token.get("email", "").matches(".*@canteen\\.internal")
+              ? (request.auth.token.get("email", "").matches("^admin.*") ? "admin" : "staff")
+              : "student"
+            )
         );
     }
 
@@ -40,7 +44,11 @@ service cloud.firestore {
     match /orders/{orderId} {
       allow read: if signedIn()
         && (resource.data.userId == request.auth.uid || staffOrAdmin());
-      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+
+      // Orders are ONLY created server-side via Admin SDK (API route).
+      // Client-side create is blocked to prevent fake "captured" orders.
+      allow create: if false;
+
       allow update: if signedIn() && staffOrAdmin();
       allow delete: if false;
     }

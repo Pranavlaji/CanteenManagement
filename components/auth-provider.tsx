@@ -12,7 +12,7 @@ import {
   signOut as firebaseSignOut,
 } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 type AuthContextValue = {
   userProfile: UserProfile | null;
@@ -21,6 +21,8 @@ type AuthContextValue = {
   signInWithGoogle: () => Promise<void>;
   signInWithCredentials: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Get the current user's Firebase ID token for authenticated API calls. */
+  getIdToken: () => Promise<string | null>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -96,9 +98,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (db) {
           const userDoc = await getDoc(doc(db, "users", user.uid));
-          const storedName = userDoc.exists() ? String(userDoc.get("name") || "").trim() : "";
-          if (storedName) {
-            name = storedName;
+          if (userDoc.exists()) {
+            const storedName = String(userDoc.get("name") || "").trim();
+            if (storedName) {
+              name = storedName;
+            }
+            const storedRole = userDoc.get("role");
+            if (storedRole === "admin" || storedRole === "staff" || storedRole === "student") {
+              role = storedRole;
+            }
           }
         }
 
@@ -107,7 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           name,
           email: user.email ?? "",
           phone: user.phoneNumber ?? "",
-          role
+          role: role || "student"
         });
       } catch (err) {
         console.error("Failed to fetch full profile. Using fallback.", err);
@@ -131,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  async function signInWithGoogle() {
+  const signInWithGoogle = useCallback(async () => {
     if (!firebaseAuthEnabled || !auth) {
       setAuthError("Firebase Auth is not configured in this environment.");
       return;
@@ -156,9 +164,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const message = describeAuthError(error);
       if (message) setAuthError(message);
     }
-  }
+  }, []);
 
-  async function signInWithCredentials(username: string, password: string) {
+  const signInWithCredentials = useCallback(async (username: string, password: string) => {
     if (!firebaseAuthEnabled || !auth) {
       setAuthError("Firebase Auth is not configured in this environment.");
       return;
@@ -184,7 +192,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Email sign-in failed:", error);
       setAuthError(describeAuthError(error) ?? "Sign-in failed.");
     }
-  }
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    setAuthError(null);
+    if (firebaseAuthEnabled && auth) {
+      await firebaseSignOut(auth);
+      return;
+    }
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    setUserProfile(null);
+  }, []);
+
+  const getIdToken = useCallback(async (): Promise<string | null> => {
+    if (!firebaseAuthEnabled || !auth || !auth.currentUser) {
+      return null;
+    }
+    try {
+      return await auth.currentUser.getIdToken(/* forceRefresh */ false);
+    } catch {
+      return null;
+    }
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -193,17 +222,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authError,
       signInWithGoogle,
       signInWithCredentials,
-      signOut: async () => {
-        setAuthError(null);
-        if (firebaseAuthEnabled && auth) {
-          await firebaseSignOut(auth);
-          return;
-        }
-        window.localStorage.removeItem(AUTH_STORAGE_KEY);
-        setUserProfile(null);
-      }
+      signOut: handleSignOut,
+      getIdToken,
     }),
-    [authError, authReady, userProfile]
+    [authError, authReady, userProfile, signInWithGoogle, signInWithCredentials, handleSignOut, getIdToken]
   );
 
   return (
