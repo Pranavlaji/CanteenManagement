@@ -13,12 +13,12 @@ const nextConfig = {
       "frame-ancestors 'none'",
       "object-src 'none'",
       "form-action 'self'",
-      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://www.gstatic.com https://www.googleapis.com",
+      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://www.gstatic.com https://www.googleapis.com https://apis.google.com https://accounts.google.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://firebasestorage.googleapis.com https://lh3.googleusercontent.com",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://checkout.razorpay.com https://api.razorpay.com",
-      "frame-src https://checkout.razorpay.com https://api.razorpay.com https://accounts.google.com",
+      "connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://*.web.app https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://checkout.razorpay.com https://api.razorpay.com",
+      "frame-src https://checkout.razorpay.com https://api.razorpay.com https://accounts.google.com https://*.firebaseapp.com https://*.web.app",
       "upgrade-insecure-requests"
     ].join("; ");
 
