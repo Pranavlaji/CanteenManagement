@@ -1,5 +1,5 @@
 import { Order, OrderStatus } from "@/lib/types";
-import { db } from "@/lib/firebase";
+import { db, isProduction } from "@/lib/firebase";
 import { collection, onSnapshot, query, where, orderBy, QueryDocumentSnapshot, DocumentData } from "firebase/firestore";
 
 const ORDER_STORAGE_KEY = "canteen.demo.orders";
@@ -56,7 +56,10 @@ function normalizeOrderDoc(doc: QueryDocumentSnapshot<DocumentData>): Order {
 
 export function subscribeToStaffOrders(callback: (orders: Order[]) => void) {
   if (!db) {
-    // Fallback to local polling for demo
+    if (isProduction) {
+      callback([]);
+      return () => {};
+    }
     callback(readLocalOrders());
     const sync = () => callback(readLocalOrders());
     window.addEventListener("storage", sync);
@@ -83,7 +86,10 @@ export function subscribeToStaffOrders(callback: (orders: Order[]) => void) {
 
 export function subscribeToStudentOrders(userId: string, callback: (orders: Order[]) => void) {
   if (!db) {
-    // Fallback to local polling
+    if (isProduction) {
+      callback([]);
+      return () => {};
+    }
     const sync = () => {
       const all = readLocalOrders();
       callback(all.filter(o => o.userId === userId));
@@ -114,6 +120,9 @@ export function subscribeToStudentOrders(userId: string, callback: (orders: Orde
 
 export async function updateOrderStatusInStore(orderId: string, status: OrderStatus) {
   if (!db) {
+    if (isProduction) {
+      throw new Error("Firestore is required for production order updates.");
+    }
     const current = readLocalOrders();
     const next = current.map((order) =>
       order.id === orderId ? { ...order, status, updatedAt: new Date().toISOString() } : order

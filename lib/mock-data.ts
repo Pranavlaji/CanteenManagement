@@ -23,7 +23,8 @@ export const seedMenu: MenuItem[] = [
     description: "Two hot samosas with green chutney.",
     category: "snack",
     pricePaisa: 3000,
-    available: true
+    available: true,
+    imageUrl: "/assets/samosa.png"
   },
   {
     id: "paneer-roll",
@@ -39,7 +40,8 @@ export const seedMenu: MenuItem[] = [
     description: "Fresh South Indian filter coffee.",
     category: "drink",
     pricePaisa: 2500,
-    available: true
+    available: true,
+    imageUrl: "/assets/coffee.png"
   },
   {
     id: "lime-soda",

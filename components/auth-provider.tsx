@@ -1,7 +1,7 @@
 "use client";
 
 import { UserProfile } from "@/lib/types";
-import { auth, db, firebaseAuthEnabled } from "@/lib/firebase";
+import { auth, db, firebaseAuthEnabled, isProduction } from "@/lib/firebase";
 import {
   AuthError,
   GoogleAuthProvider,
@@ -69,6 +69,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!firebaseAuthEnabled || !auth) {
       setAuthReady(true);
+      if (isProduction) {
+        setUserProfile(null);
+        setAuthError("Firebase Auth is required in production.");
+        return;
+      }
       try {
         const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
         if (raw) {

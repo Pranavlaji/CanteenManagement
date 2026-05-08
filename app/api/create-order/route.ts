@@ -31,7 +31,7 @@ async function getMenuItemForCheckout(itemId: string): Promise<MenuItem | null> 
   }
 
   const menuSnapshot = await adminDb.collection("menuItems").limit(1).get();
-  if (menuSnapshot.empty) {
+  if (menuSnapshot.empty && process.env.NODE_ENV !== "production") {
     return seedMenu.find((item) => item.id === itemId) || null;
   }
 

@@ -547,14 +547,15 @@ input {
 }
 
 .menu-card {
-  background: #eeeeee;
-  border: 0;
-  border-radius: 9px;
+  background: rgb(238 238 238 / 19%);
+  border: 1px solid #efefef;
+  border-radius: 28px;
   box-shadow: none;
   display: grid;
-  height: 156px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 184px;
   overflow: hidden;
-  padding: 14px 10px 13px;
+  padding: 14px 10px 20px;
   position: relative;
 }
 
@@ -562,7 +563,7 @@ input {
   align-items: center;
   background: transparent;
   display: flex;
-  height: 94px;
+  min-height: 116px;
   justify-content: center;
 }
 
@@ -574,6 +575,15 @@ input {
   display: block;
   height: 94px;
   width: 94px;
+}
+
+.food-visual img {
+  border-radius: 0;
+  display: block;
+  height: 122px;
+  max-width: 100%;
+  object-fit: contain;
+  width: 148px;
 }
 
 .food-visual.meal,
@@ -595,8 +605,9 @@ input {
 
 .menu-card-title h3 {
   color: var(--ink);
+  font-family: "Satoshi Variable", "Satoshi", "Avenir Next", "Trebuchet MS", sans-serif;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 18px;
 }
 
@@ -1064,11 +1075,19 @@ input {
 
 .toggle-row {
   flex-direction: row;
+  font-size: 16px;
+  font-weight: 700;
   justify-content: space-between;
+  min-height: 52px;
+  padding: 10px 0;
 }
 
 .toggle-row input {
-  min-height: auto;
+  accent-color: var(--brand);
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 28px;
+  width: 28px;
 }
 
 .metric-grid {

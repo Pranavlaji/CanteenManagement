@@ -1,16 +1,15 @@
 import { MenuItem } from "@/lib/types";
-import { db } from "@/lib/firebase";
+import { db, isProduction } from "@/lib/firebase";
 import { collection, onSnapshot } from "firebase/firestore";
 import { seedMenu } from "@/lib/mock-data";
 
 /**
  * Subscribe to real-time menu updates from Firestore.
- * Falls back to seedMenu when Firestore is unavailable.
+ * Falls back to seedMenu only in local development.
  */
 export function subscribeToMenu(callback: (items: MenuItem[]) => void) {
   if (!db) {
-    // No Firestore — use static seed data
-    callback(seedMenu);
+    callback(isProduction ? [] : seedMenu);
     return () => {};
   }
 
@@ -18,8 +17,7 @@ export function subscribeToMenu(callback: (items: MenuItem[]) => void) {
     collection(db, "menuItems"),
     (snapshot) => {
       if (snapshot.empty) {
-        // Collection doesn't exist yet or is empty — fall back to seed
-        callback(seedMenu);
+        callback(isProduction ? [] : seedMenu);
         return;
       }
 
@@ -40,8 +38,7 @@ export function subscribeToMenu(callback: (items: MenuItem[]) => void) {
     },
     (error) => {
       console.error("Menu listener error:", error);
-      // Fall back to seed data on error
-      callback(seedMenu);
+      callback(isProduction ? [] : seedMenu);
     }
   );
 }

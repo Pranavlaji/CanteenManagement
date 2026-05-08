@@ -74,7 +74,11 @@ export function MenuGrid({
             type="button"
           >
             <div className={`food-visual ${item.category}`}>
-              <span aria-hidden="true" />
+              {item.imageUrl ? (
+                <img src={item.imageUrl} alt="" aria-hidden="true" />
+              ) : (
+                <span aria-hidden="true" />
+              )}
             </div>
             <div className="menu-card-body">
               <div>

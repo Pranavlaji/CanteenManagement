@@ -1,7 +1,9 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, type Transaction } from "firebase-admin/firestore";
 import { adminAuth, adminDb, isValidHexSignature } from "@/lib/verify-auth";
+
+const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
 
 function istDate(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -12,29 +14,26 @@ function istDate(date = new Date()) {
   }).format(date);
 }
 
-async function nextTokenNumber(): Promise<number> {
+async function nextTokenNumberInTransaction(tx: Transaction): Promise<number> {
   const counterRef = adminDb.collection("counters").doc("daily");
+  const snap = await tx.get(counterRef);
+  const today = istDate();
+  const lastToken = snap.exists && snap.get("date") === today
+    ? Number(snap.get("lastToken") || 0)
+    : 0;
+  const nextToken = lastToken + 1;
 
-  return adminDb.runTransaction(async (tx) => {
-    const snap = await tx.get(counterRef);
-    const today = istDate();
-    const lastToken = snap.exists && snap.get("date") === today
-      ? Number(snap.get("lastToken") || 0)
-      : 0;
-    const nextToken = lastToken + 1;
+  tx.set(
+    counterRef,
+    {
+      date: today,
+      lastToken: nextToken,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
-    tx.set(
-      counterRef,
-      {
-        date: today,
-        lastToken: nextToken,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-
-    return nextToken;
-  });
+  return nextToken;
 }
 
 function verifyWebhookSignature(rawBody: string, signature: string, secret: string) {
@@ -52,11 +51,20 @@ async function markPaymentFailed(payment: Record<string, unknown>) {
   const orderId = typeof payment.order_id === "string" ? payment.order_id : "";
   if (!orderId) return;
 
-  await adminDb.collection("paymentAttempts").doc(orderId).set({
-    status: "failed",
-    failureReason: String(payment.error_description || "Payment failed."),
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  const attemptRef = adminDb.collection("paymentAttempts").doc(orderId);
+  await adminDb.runTransaction(async (tx) => {
+    const snap = await tx.get(attemptRef);
+    if (!snap.exists) return;
+
+    const status = String(snap.get("status") || "");
+    if (status === "captured") return;
+
+    tx.set(attemptRef, {
+      status: "failed",
+      failureReason: String(payment.error_description || "Payment failed."),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
 }
 
 async function finalizeCapturedPayment(payment: Record<string, unknown>) {
@@ -70,86 +78,97 @@ async function finalizeCapturedPayment(payment: Record<string, unknown>) {
   }
 
   const attemptRef = adminDb.collection("paymentAttempts").doc(razorpayOrderId);
-  const attemptSnap = await attemptRef.get();
-  if (!attemptSnap.exists) {
-    console.error("Webhook payment attempt not found:", razorpayOrderId);
-    return;
-  }
-
-  const attempt = attemptSnap.data() || {};
-  if (attempt.status === "captured") {
-    return;
-  }
-
-  const totalPaisa = Number(attempt.amountPaisa || 0);
-  const items = attempt.items;
-  if (
-    attempt.status !== "created" ||
-    amount !== totalPaisa ||
-    currency !== "INR" ||
-    !Array.isArray(items) ||
-    items.length === 0
-  ) {
-    await attemptRef.set({
-      status: "verification_failed",
-      failureReason: "Webhook payment details did not match the stored attempt.",
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return;
-  }
-
-  const userId = String(attempt.userId || "");
-  if (!userId) {
-    await attemptRef.set({
-      status: "verification_failed",
-      failureReason: "Payment attempt is missing a user id.",
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    return;
-  }
-
-  const token = await nextTokenNumber();
-  const now = new Date();
-  let customerName = "Student";
-  try {
-    const user = await adminAuth.getUser(userId);
-    customerName = user.email || user.displayName || customerName;
-  } catch {
-    customerName = String(attempt.customerName || customerName);
-  }
-
-  const orderData = {
-    id: razorpayOrderId,
-    token,
-    userId,
-    customerName,
-    items,
-    totalPaisa,
-    status: "placed",
-    paymentStatus: "captured",
-    razorpayOrderId,
-    razorpayPaymentId,
-    businessDate: istDate(now),
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  };
-
   const orderRef = adminDb.collection("orders").doc(razorpayOrderId);
-  try {
-    await orderRef.create(orderData);
-  } catch (error) {
-    const message = String(error);
-    if (!message.includes("ALREADY_EXISTS") && !message.includes("already exists")) {
-      throw error;
-    }
-  }
+  const now = new Date();
 
-  await attemptRef.set({
-    status: "captured",
-    razorpayPaymentId,
-    capturedAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+  await adminDb.runTransaction(async (tx) => {
+    const attemptSnap = await tx.get(attemptRef);
+    if (!attemptSnap.exists) {
+      console.error("Webhook payment attempt not found:", razorpayOrderId);
+      return;
+    }
+
+    const attempt = attemptSnap.data() || {};
+    if (attempt.status === "captured") {
+      return;
+    }
+
+    const totalPaisa = Number(attempt.amountPaisa || 0);
+    const items = attempt.items;
+    if (
+      attempt.status !== "created" ||
+      amount !== totalPaisa ||
+      currency !== "INR" ||
+      !Array.isArray(items) ||
+      items.length === 0
+    ) {
+      tx.set(attemptRef, {
+        status: "verification_failed",
+        failureReason: "Webhook payment details did not match the stored attempt.",
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return;
+    }
+
+    const userId = String(attempt.userId || "");
+    if (!userId) {
+      tx.set(attemptRef, {
+        status: "verification_failed",
+        failureReason: "Payment attempt is missing a user id.",
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return;
+    }
+
+    const orderSnap = await tx.get(orderRef);
+    if (orderSnap.exists) {
+      tx.set(attemptRef, {
+        status: "captured",
+        razorpayPaymentId,
+        capturedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return;
+    }
+
+    const token = await nextTokenNumberInTransaction(tx);
+    const orderData = {
+      id: razorpayOrderId,
+      token,
+      userId,
+      customerName: String(attempt.customerName || "Student"),
+      items,
+      totalPaisa,
+      status: "placed",
+      paymentStatus: "captured",
+      razorpayOrderId,
+      razorpayPaymentId,
+      businessDate: istDate(now),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    tx.create(orderRef, orderData);
+
+    tx.set(attemptRef, {
+      status: "captured",
+      razorpayPaymentId,
+      capturedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  try {
+    const orderSnap = await orderRef.get();
+    const order = orderSnap.data();
+    if (order?.userId && order.customerName === "Student") {
+      const user = await adminAuth.getUser(String(order.userId));
+      const customerName = user.email || user.displayName || "Student";
+      await orderRef.set({ customerName }, { merge: true });
+    }
+  } catch {
+    // Customer display name enrichment is best-effort.
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -165,6 +184,9 @@ export async function POST(req: NextRequest) {
   }
 
   const rawBody = await req.text();
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_WEBHOOK_BODY_BYTES) {
+    return NextResponse.json({ error: "Payload too large." }, { status: 413 });
+  }
   if (!verifyWebhookSignature(rawBody, signature, secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

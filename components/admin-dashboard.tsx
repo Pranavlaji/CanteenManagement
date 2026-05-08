@@ -25,6 +25,7 @@ export function AdminDashboard({
 
   const [newName, setNewName] = useState("");
   const [newPrice, setNewPrice] = useState("");
+  const [newImageUrl, setNewImageUrl] = useState("");
   const [newCategory, setNewCategory] = useState<"meal" | "snack" | "drink">("meal");
 
   return (
@@ -94,10 +95,12 @@ export function AdminDashboard({
                 pricePaisa: Math.round(Number(newPrice) * 100),
                 category: newCategory,
                 available: true,
-                description: ""
+                description: "",
+                imageUrl: newImageUrl.trim() || undefined
               });
               setNewName("");
               setNewPrice("");
+              setNewImageUrl("");
             }}
           >
             <div style={{ display: "flex", gap: "10px", flex: 1 }}>
@@ -115,6 +118,12 @@ export function AdminDashboard({
                 onChange={(e) => setNewPrice(e.target.value)} 
                 required 
                 style={{ padding: "8px 12px", border: "1px solid #ddd", borderRadius: "6px", width: "100px" }}
+              />
+              <input
+                placeholder="/menu/dish.jpg"
+                value={newImageUrl}
+                onChange={(e) => setNewImageUrl(e.target.value)}
+                style={{ padding: "8px 12px", border: "1px solid #ddd", borderRadius: "6px", width: "100%", maxWidth: "180px" }}
               />
               <select 
                 value={newCategory} 

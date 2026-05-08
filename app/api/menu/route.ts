@@ -17,11 +17,17 @@ function parseMenuItem(value: unknown): Omit<MenuItem, "id"> | null {
   const category = raw.category;
   const pricePaisa = Number(raw.pricePaisa);
   const available = raw.available !== false;
+  const imageUrl = typeof raw.imageUrl === "string" ? raw.imageUrl.trim() : "";
 
   if (!name || name.length > 80) return null;
   if (description.length > 240) return null;
   if (!categories.includes(category as (typeof categories)[number])) return null;
   if (!Number.isInteger(pricePaisa) || pricePaisa < 100 || pricePaisa > 100000) return null;
+  if (
+    imageUrl &&
+    (imageUrl.length > 500 ||
+      (!imageUrl.startsWith("/") && !imageUrl.startsWith("https://")))
+  ) return null;
 
   return {
     name,
@@ -29,6 +35,7 @@ function parseMenuItem(value: unknown): Omit<MenuItem, "id"> | null {
     category: category as MenuItem["category"],
     pricePaisa,
     available,
+    ...(imageUrl ? { imageUrl } : {}),
   };
 }
 

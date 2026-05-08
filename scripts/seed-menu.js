@@ -9,7 +9,8 @@ const seedMenu = [
     description: "Crisp dosa with potato masala and chutney.",
     category: "meal",
     pricePaisa: 3000,
-    available: true
+    available: true,
+    imageUrl: "/assets/dosa.png"
   },
   {
     id: "chicken-Biryani",
@@ -17,7 +18,8 @@ const seedMenu = [
     description: "Yummy Chicken Biryani",
     category: "meal",
     pricePaisa: 9000,
-    available: true
+    available: true,
+    imageUrl: "/assets/biriyani.png"
   },
   {
     id: "samosa",
@@ -25,15 +27,17 @@ const seedMenu = [
     description: "One hot samosa with green chutney.",
     category: "snack",
     pricePaisa: 1500,
-    available: true
+    available: true,
+    imageUrl: "/assets/samosa.png"
   },
   {
-    id: "paneer-frankie",
-    name: "Paneer Frankie",
-    description: "Paneer tikka, onions, and mint sauce in a wrap.",
-    category: "snack",
+    id: "burji-rice",
+    name: "Egg Burji Rice",
+    description: "Yummy Egg Burji Rice",
+    category: "meal",
     pricePaisa: 7000,
-    available: false
+    available: true,
+    imageUrl: "/assets/burjirice.png"
   },
   {
     id: "filter-coffee",
@@ -41,15 +45,17 @@ const seedMenu = [
     description: "Fresh South Indian filter coffee.",
     category: "drink",
     pricePaisa: 1500,
-    available: true
+    available: true,
+    imageUrl: "/assets/coffee.png"
   },
   {
-    id: "lime-soda",
-    name: "Fresh Lime Soda",
-    description: "Sweet, salted, or mixed.",
+    id: "chai",
+    name: "Chai",
+    description: "Yummy Chai",
     category: "drink",
-    pricePaisa: 3500,
-    available: true
+    pricePaisa: 1500,
+    available: true,
+    imageUrl: "/assets/chaya.png"
   },
   {
     id: "chicken-noodles",
@@ -57,7 +63,8 @@ const seedMenu = [
     description: "Yummy Chicken Noodles",
     category: "meal",
     pricePaisa: 8000,
-    available: true
+    available: true,
+    imageUrl: "/assets/noodles.png"
   },
   {
     id: "vada-pav",
@@ -65,7 +72,8 @@ const seedMenu = [
     description: "Yummy Vada Pav",
     category: "snack",
     pricePaisa: 1500,
-    available: true
+    available: true,
+    imageUrl: "/assets/vada.png"
   },
   {
     id: "chicken-triple",
@@ -73,7 +81,8 @@ const seedMenu = [
     description: "Yummy Chicken Triple",
     category: "meal",
     pricePaisa: 10000,
-    available: true
+    available: true,
+    imageUrl: "/assets/triplerice.png"
   }
 ];
 
